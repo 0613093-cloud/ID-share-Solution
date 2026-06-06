@@ -83,6 +83,19 @@ function Field({ label, children }) {
 function InfoChip({ label, value }) {
   return <span style={{ fontSize:11, color:"#8892a4" }}><span style={{ fontWeight:700, color:"#1a2340" }}>{label}: </span>{value}</span>;
 }
+function CopyLinkBtn({ docId }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    const link = `${window.location.origin}${window.location.pathname}?view=${docId}`;
+    navigator.clipboard.writeText(link).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+  };
+  return (
+    <button onClick={handleCopy}
+      style={{ flex:1, background: copied ? "#e91e8c" : "rgba(233,30,140,0.08)", color: copied ? "#fff" : "#e91e8c", border:"1.5px solid #e91e8c", borderRadius:8, padding:"9px 0", fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"'Sora',sans-serif", letterSpacing:0.3, transition:"all .2s" }}>
+      {copied ? "✓ 복사됨" : "🔗 공유 링크 복사"}
+    </button>
+  );
+}
 
 // ─── ADMIN PAGE ───────────────────────────────────────────────────────────────
 function AdminPage({ docs, setDocs, counter, setCounter, defaultPw, setDefaultPw }) {
@@ -237,6 +250,14 @@ function AdminPage({ docs, setDocs, counter, setCounter, defaultPw, setDefaultPw
                               <InfoChip label="만료" value={new Date(doc.expiry).toLocaleString("ko-KR")}/>
                               <InfoChip label="현재 PW" value={activePw}/>
                               <InfoChip label="조회" value={`${doc.viewCount}회`}/>
+                            </div>
+                            <div style={{ display:"flex", gap:8, marginTop:12 }}>
+                              <button
+                                onClick={() => window.open(doc.url, "_blank")}
+                                style={{ flex:1, background:"linear-gradient(135deg,#1a2340,#2d3a6b)", color:"#fff", border:"none", borderRadius:8, padding:"9px 0", fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"'Sora',sans-serif", letterSpacing:0.3 }}>
+                                📄 문서 바로가기
+                              </button>
+                              <CopyLinkBtn docId={doc.id}/>
                             </div>
                           </div>
                         </div>
