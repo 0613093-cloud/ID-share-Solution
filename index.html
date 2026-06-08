@@ -16,552 +16,613 @@
       60%    { transform:translateX(-6px) }
       80%    { transform:translateX(6px) }
     }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { width:40px; height:40px; border:3px solid rgba(233,30,140,0.2); border-top-color:#e91e8c; border-radius:50%; animation:spin .8s linear infinite; }
   </style>
 </head>
 <body>
   <div id="root"></div>
 
-  <!-- React + Babel via CDN — no build step needed -->
+  <!-- Firebase SDK -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getDatabase, ref, set, get, push, onValue, update }
+      from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCstceNikassZ1WJ0uY7xOFQ0X71mvOgw4",
+      authDomain: "idh--share.firebaseapp.com",
+      databaseURL: "https://idh--share-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "idh--share",
+      storageBucket: "idh--share.firebasestorage.app",
+      messagingSenderId: "881686477075",
+      appId: "1:881686477075:web:d3d8a3af0b54a826e602e6"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db  = getDatabase(app);
+
+    // ── DB helpers ──────────────────────────────────────────────────────────────
+    window.DB = {
+      // 문서 전체 읽기
+      async getDocs() {
+        const snap = await get(ref(db, "documents"));
+        return snap.exists() ? Object.values(snap.val()) : [];
+      },
+      // 카운터 읽기
+      async getCounter() {
+        const snap = await get(ref(db, "counter"));
+        return snap.exists() ? snap.val() : 1;
+      },
+      // 문서 저장
+      async saveDoc(doc) {
+        await set(ref(db, `documents/${doc.id}`), doc);
+      },
+      // 카운터 업데이트
+      async setCounter(n) {
+        await set(ref(db, "counter"), n);
+      },
+      // 디폴트 비밀번호
+      async getDefaultPw() {
+        const snap = await get(ref(db, "defaultPw"));
+        return snap.exists() ? snap.val() : "1234";
+      },
+      async setDefaultPw(pw) {
+        await set(ref(db, "defaultPw"), pw);
+      },
+      // 열람 로그
+      async getLogs() {
+        const snap = await get(ref(db, "logs"));
+        if (!snap.exists()) return [];
+        return Object.values(snap.val());
+      },
+      async addLog(log) {
+        await push(ref(db, "logs"), log);
+      },
+      // 조회수 증가
+      async incViewCount(docId) {
+        const snap = await get(ref(db, `documents/${docId}/viewCount`));
+        const cur  = snap.exists() ? snap.val() : 0;
+        await set(ref(db, `documents/${docId}/viewCount`), cur + 1);
+      },
+      // 실시간 문서 구독
+      onDocs(cb) {
+        return onValue(ref(db, "documents"), snap => {
+          cb(snap.exists() ? Object.values(snap.val()) : []);
+        });
+      },
+    };
+
+    window.dispatchEvent(new Event("firebase-ready"));
+  </script>
+
+  <!-- React + Babel -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
   <script type="text/babel" data-presets="react">
-    const { useState, useEffect, useCallback } = React;
+    const { useState, useEffect, useCallback, useRef } = React;
 
-// ─── Storage (localStorage) ───────────────────────────────────────────────────
-const DOCS_KEY    = "idh_secure_docs";
-const DEFAULT_KEY = "idh_default_pw";
-const LOGS_KEY    = "idh_access_log";
+    // ── Helpers ────────────────────────────────────────────────────────────────
+    function genLinkId(n) { return `IDH-Planning-Coordination-${String(n).padStart(3,"0")}`; }
 
-const defaultState = { documents: [], counter: 1 };
-
-function loadDocs()      { try { return JSON.parse(localStorage.getItem(DOCS_KEY))    || defaultState; } catch { return defaultState; } }
-function saveDocs(d)     { localStorage.setItem(DOCS_KEY, JSON.stringify(d)); }
-function loadDefaultPw() { return localStorage.getItem(DEFAULT_KEY) || "1234"; }
-function saveDefaultPw(p){ localStorage.setItem(DEFAULT_KEY, p); }
-function loadLogs()      { try { return JSON.parse(localStorage.getItem(LOGS_KEY))    || []; } catch { return []; } }
-function saveLogs(l)     { localStorage.setItem(LOGS_KEY, JSON.stringify(l)); }
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function genLinkId(n) { return `IDH-Planning-Coordination-${String(n).padStart(3,"0")}`; }
-
-// ─── Logo ─────────────────────────────────────────────────────────────────────
-function IDHLogo({ dark }) {
-  const korColor  = dark ? "#ffffff" : "#1a2340";
-  const subColor  = dark ? "rgba(255,255,255,0.55)" : "#8892a4";
-  return (
-    <div style={{ display:"flex", alignItems:"center", gap:8, userSelect:"none" }}>
-      <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="18" cy="18" r="14" fill="#e91e8c"/>
-        <text x="18" y="23" textAnchor="middle" fill="white"
-              fontSize="13" fontWeight="900" fontFamily="'Sora','Arial',sans-serif" letterSpacing="-0.5">id</text>
-      </svg>
-      <div style={{ lineHeight:1 }}>
-        <div style={{ color:korColor, fontWeight:800, fontSize:16, fontFamily:"'Sora','Apple SD Gothic Neo','Malgun Gothic',sans-serif", letterSpacing:0.2, lineHeight:1.15 }}>아이디병원</div>
-        <div style={{ color:subColor, fontWeight:500, fontSize:9.5, fontFamily:"'Sora',sans-serif", letterSpacing:1.6, textTransform:"uppercase", marginTop:1 }}>ID HOSPITAL</div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Shared styles ────────────────────────────────────────────────────────────
-const inputStyle = {
-  width:"100%", border:"1.5px solid #dde1ea", borderRadius:9,
-  padding:"11px 13px", fontSize:14, outline:"none",
-  boxSizing:"border-box", fontFamily:"'Sora',sans-serif",
-  color:"#1a2340", background:"#f8f9fc", transition:"border-color .2s"
-};
-function Field({ label, children }) {
-  return (
-    <div style={{ marginBottom:20 }}>
-      <label style={{ color:"#4a5568", fontSize:12, fontWeight:600, display:"block", marginBottom:7, letterSpacing:0.3 }}>{label}</label>
-      {children}
-    </div>
-  );
-}
-function InfoChip({ label, value }) {
-  return <span style={{ fontSize:11, color:"#8892a4" }}><span style={{ fontWeight:700, color:"#1a2340" }}>{label}: </span>{value}</span>;
-}
-function CopyLinkBtn({ docId }) {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = () => {
-    const link = `${window.location.origin}${window.location.pathname}?view=${docId}`;
-    navigator.clipboard.writeText(link).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
-  };
-  return (
-    <button onClick={handleCopy}
-      style={{ flex:1, background: copied ? "#e91e8c" : "rgba(233,30,140,0.08)", color: copied ? "#fff" : "#e91e8c", border:"1.5px solid #e91e8c", borderRadius:8, padding:"9px 0", fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"'Sora',sans-serif", letterSpacing:0.3, transition:"all .2s" }}>
-      {copied ? "✓ 복사됨" : "🔗 공유 링크 복사"}
-    </button>
-  );
-}
-
-// ─── ADMIN PAGE ───────────────────────────────────────────────────────────────
-function AdminPage({ docs, setDocs, counter, setCounter, defaultPw, setDefaultPw }) {
-  const [tab, setTab]               = useState("create");
-  const [form, setForm]             = useState({ url:"", password:"", confirmPw:"", expiryDate:"", expiryHour:"23" });
-  const [newDefaultPw, setNewDPw]   = useState("");
-  const [confirmDefault, setConf]   = useState("");
-  const [showDefault, setShowDef]   = useState(false);
-  const [created, setCreated]       = useState(null);
-  const [copied, setCopied]         = useState(false);
-  const [error, setError]           = useState("");
-  const [pwError, setPwError]       = useState("");
-
-  const handleCreate = () => {
-    setError("");
-    if (!form.url)                              { setError("문서 URL을 입력해주세요."); return; }
-    if (!form.password)                         { setError("비밀번호를 입력해주세요."); return; }
-    if (form.password !== form.confirmPw)       { setError("비밀번호가 일치하지 않습니다."); return; }
-    if (!form.expiryDate)                       { setError("만료 날짜를 설정해주세요."); return; }
-
-    const linkId    = genLinkId(counter);
-    const expiryISO = new Date(`${form.expiryDate}T${String(form.expiryHour).padStart(2,"0")}:00:00`).toISOString();
-    const newDoc    = { id:linkId, url:form.url, password:form.password, expiry:expiryISO, createdAt:new Date().toISOString(), viewCount:0 };
-    const updated   = { documents:[...docs, newDoc], counter: counter + 1 };
-    setDocs(updated.documents);
-    setCounter(updated.counter);
-    saveDocs(updated);
-    setCreated(newDoc);
-    setForm({ url:"", password:"", confirmPw:"", expiryDate:"", expiryHour:"23" });
-  };
-
-  const origin    = typeof window !== "undefined" ? window.location.origin + window.location.pathname : "";
-  const shareLink = created ? `${origin}?view=${created.id}` : "";
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(shareLink).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
-  };
-
-  const handleSetDefault = () => {
-    setPwError("");
-    if (!/^\d{4}$/.test(newDefaultPw))       { setPwError("4자리 숫자만 입력 가능합니다."); return; }
-    if (newDefaultPw !== confirmDefault)      { setPwError("비밀번호가 일치하지 않습니다."); return; }
-    saveDefaultPw(newDefaultPw);
-    setDefaultPw(newDefaultPw);
-    setNewDPw(""); setConf("");
-    alert("디폴트 비밀번호가 설정되었습니다.");
-  };
-
-  const tabStyle = (t) => ({
-    padding:"10px 22px", borderRadius:"8px 8px 0 0",
-    background: tab === t ? "#1a2340" : "transparent",
-    color: tab === t ? "#fff" : "#8892a4",
-    fontWeight: tab === t ? 700 : 500,
-    cursor:"pointer", border:"none", fontSize:13,
-    fontFamily:"'Sora',sans-serif", transition:"all .2s",
-  });
-
-  return (
-    <div style={{ minHeight:"100vh", background:"#f0f2f7", fontFamily:"'Sora',sans-serif" }}>
-      <div style={{ background:"#1a2340", padding:"0 32px", display:"flex", alignItems:"center", justifyContent:"space-between", height:64, boxShadow:"0 2px 12px rgba(26,35,64,0.2)" }}>
-        <IDHLogo dark />
-        <div style={{ color:"#e91e8c", fontWeight:700, fontSize:13, letterSpacing:2, textTransform:"uppercase" }}>Planning & Coordination · Admin</div>
-      </div>
-
-      <div style={{ maxWidth:720, margin:"40px auto", padding:"0 16px" }}>
-        <div style={{ marginBottom:24 }}>
-          <h1 style={{ color:"#1a2340", fontSize:24, fontWeight:800, margin:0, letterSpacing:-0.5 }}>문서 보안 공유 시스템</h1>
-          <p style={{ color:"#8892a4", fontSize:13, margin:"6px 0 0" }}>민감 문서를 비밀번호로 보호하여 안전하게 공유하세요</p>
+    // ── Logo ───────────────────────────────────────────────────────────────────
+    function IDHLogo({ dark }) {
+      const korColor = dark ? "#ffffff" : "#1a2340";
+      const subColor = dark ? "rgba(255,255,255,0.55)" : "#8892a4";
+      return (
+        <div style={{ display:"flex", alignItems:"center", gap:8, userSelect:"none" }}>
+          <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
+            <circle cx="18" cy="18" r="14" fill="#e91e8c"/>
+            <text x="18" y="23" textAnchor="middle" fill="white"
+                  fontSize="13" fontWeight="900" fontFamily="'Sora','Arial',sans-serif" letterSpacing="-0.5">id</text>
+          </svg>
+          <div style={{ lineHeight:1 }}>
+            <div style={{ color:korColor, fontWeight:800, fontSize:16, fontFamily:"'Sora','Apple SD Gothic Neo','Malgun Gothic',sans-serif", letterSpacing:0.2, lineHeight:1.15 }}>아이디병원</div>
+            <div style={{ color:subColor, fontWeight:500, fontSize:9.5, fontFamily:"'Sora',sans-serif", letterSpacing:1.6, textTransform:"uppercase", marginTop:1 }}>ID HOSPITAL</div>
+          </div>
         </div>
+      );
+    }
 
-        <div style={{ display:"flex", borderBottom:"2px solid #1a2340" }}>
-          <button style={tabStyle("create")}   onClick={() => setTab("create")}>링크 생성</button>
-          <button style={tabStyle("list")}     onClick={() => setTab("list")}>생성 목록 ({docs.length})</button>
-          <button style={tabStyle("defaultpw")} onClick={() => setTab("defaultpw")}>디폴트 비밀번호</button>
+    // ── Shared UI ──────────────────────────────────────────────────────────────
+    const inputStyle = {
+      width:"100%", border:"1.5px solid #dde1ea", borderRadius:9,
+      padding:"11px 13px", fontSize:14, outline:"none",
+      boxSizing:"border-box", fontFamily:"'Sora',sans-serif",
+      color:"#1a2340", background:"#f8f9fc", transition:"border-color .2s"
+    };
+    function Field({ label, children }) {
+      return (
+        <div style={{ marginBottom:20 }}>
+          <label style={{ color:"#4a5568", fontSize:12, fontWeight:600, display:"block", marginBottom:7, letterSpacing:0.3 }}>{label}</label>
+          {children}
         </div>
+      );
+    }
+    function InfoChip({ label, value }) {
+      return <span style={{ fontSize:11, color:"#8892a4" }}><span style={{ fontWeight:700, color:"#1a2340" }}>{label}: </span>{value}</span>;
+    }
+    function CopyLinkBtn({ docId }) {
+      const [copied, setCopied] = useState(false);
+      return (
+        <button onClick={() => {
+          const link = `${window.location.origin}${window.location.pathname}?view=${docId}`;
+          navigator.clipboard.writeText(link).then(() => { setCopied(true); setTimeout(()=>setCopied(false),2000); });
+        }} style={{ flex:1, background: copied?"#e91e8c":"rgba(233,30,140,0.08)", color: copied?"#fff":"#e91e8c", border:"1.5px solid #e91e8c", borderRadius:8, padding:"9px 0", fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"'Sora',sans-serif", transition:"all .2s" }}>
+          {copied ? "✓ 복사됨" : "🔗 공유 링크 복사"}
+        </button>
+      );
+    }
+    function Loader({ text }) {
+      return (
+        <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:16, padding:"60px 0" }}>
+          <div className="spinner"/>
+          <div style={{ color:"#8892a4", fontSize:13 }}>{text || "불러오는 중..."}</div>
+        </div>
+      );
+    }
 
-        <div style={{ background:"#fff", borderRadius:"0 8px 8px 8px", padding:32, boxShadow:"0 4px 20px rgba(26,35,64,0.08)" }}>
+    // ── ADMIN PAGE ─────────────────────────────────────────────────────────────
+    function AdminPage({ docs, counter, setCounter, defaultPw, setDefaultPw, refreshDocs }) {
+      const [tab, setTab]             = useState("create");
+      const [form, setForm]           = useState({ url:"", password:"", confirmPw:"", expiryDate:"", expiryHour:"23" });
+      const [newDefaultPw, setNewDPw] = useState("");
+      const [confirmDef, setConfDef]  = useState("");
+      const [showDef, setShowDef]     = useState(false);
+      const [created, setCreated]     = useState(null);
+      const [copied, setCopied]       = useState(false);
+      const [error, setError]         = useState("");
+      const [pwError, setPwError]     = useState("");
+      const [saving, setSaving]       = useState(false);
 
-          {/* ── CREATE ── */}
-          {tab === "create" && (
-            <div>
-              {created && (
-                <div style={{ background:"linear-gradient(135deg,#1a2340,#2d3a6b)", borderRadius:12, padding:24, marginBottom:28, position:"relative", overflow:"hidden" }}>
-                  <div style={{ position:"absolute", right:-20, top:-20, width:120, height:120, borderRadius:"50%", background:"rgba(233,30,140,0.15)" }}/>
-                  <div style={{ color:"#e91e8c", fontWeight:700, fontSize:11, letterSpacing:2, marginBottom:8 }}>✓ 링크 생성 완료</div>
-                  <div style={{ color:"#fff", fontWeight:700, fontSize:15, marginBottom:6 }}>{created.id}</div>
-                  <div style={{ background:"rgba(255,255,255,0.1)", borderRadius:8, padding:"10px 14px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, marginTop:12 }}>
-                    <span style={{ color:"#c8d0e0", fontSize:11, wordBreak:"break-all", flex:1 }}>{shareLink}</span>
-                    <button onClick={handleCopy} style={{ background: copied ? "#e91e8c" : "rgba(233,30,140,0.2)", color: copied ? "#fff" : "#e91e8c", border:"1px solid #e91e8c", borderRadius:6, padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:12, whiteSpace:"nowrap", transition:"all .2s" }}>
-                      {copied ? "✓ 복사됨" : "링크 복사"}
-                    </button>
+      const handleCreate = async () => {
+        setError("");
+        if (!form.url)                        { setError("문서 URL을 입력해주세요."); return; }
+        if (!form.password)                   { setError("비밀번호를 입력해주세요."); return; }
+        if (form.password !== form.confirmPw) { setError("비밀번호가 일치하지 않습니다."); return; }
+        if (!form.expiryDate)                 { setError("만료 날짜를 설정해주세요."); return; }
+
+        setSaving(true);
+        const linkId    = genLinkId(counter);
+        const expiryISO = new Date(`${form.expiryDate}T${String(form.expiryHour).padStart(2,"0")}:00:00`).toISOString();
+        const newDoc    = { id:linkId, url:form.url, password:form.password, expiry:expiryISO, createdAt:new Date().toISOString(), viewCount:0 };
+
+        await window.DB.saveDoc(newDoc);
+        await window.DB.setCounter(counter + 1);
+        setCounter(counter + 1);
+        setCreated(newDoc);
+        setForm({ url:"", password:"", confirmPw:"", expiryDate:"", expiryHour:"23" });
+        setSaving(false);
+      };
+
+      const shareLink = created ? `${window.location.origin}${window.location.pathname}?view=${created.id}` : "";
+
+      const handleSetDefault = async () => {
+        setPwError("");
+        if (!/^\d{4}$/.test(newDefaultPw))    { setPwError("4자리 숫자만 입력 가능합니다."); return; }
+        if (newDefaultPw !== confirmDef)       { setPwError("비밀번호가 일치하지 않습니다."); return; }
+        await window.DB.setDefaultPw(newDefaultPw);
+        setDefaultPw(newDefaultPw);
+        setNewDPw(""); setConfDef("");
+        alert("디폴트 비밀번호가 설정되었습니다.");
+      };
+
+      const tabStyle = t => ({
+        padding:"10px 22px", borderRadius:"8px 8px 0 0",
+        background: tab===t ? "#1a2340" : "transparent",
+        color: tab===t ? "#fff" : "#8892a4",
+        fontWeight: tab===t ? 700 : 500,
+        cursor:"pointer", border:"none", fontSize:13,
+        fontFamily:"'Sora',sans-serif", transition:"all .2s",
+      });
+
+      return (
+        <div style={{ minHeight:"100vh", background:"#f0f2f7", fontFamily:"'Sora',sans-serif", paddingBottom:80 }}>
+          <div style={{ background:"#1a2340", padding:"0 32px", display:"flex", alignItems:"center", justifyContent:"space-between", height:64, boxShadow:"0 2px 12px rgba(26,35,64,0.2)" }}>
+            <IDHLogo dark />
+            <div style={{ color:"#e91e8c", fontWeight:700, fontSize:13, letterSpacing:2, textTransform:"uppercase" }}>Planning & Coordination · Admin</div>
+          </div>
+
+          <div style={{ maxWidth:720, margin:"40px auto", padding:"0 16px" }}>
+            <div style={{ marginBottom:24 }}>
+              <h1 style={{ color:"#1a2340", fontSize:24, fontWeight:800, margin:0, letterSpacing:-0.5 }}>문서 보안 공유 시스템</h1>
+              <p style={{ color:"#8892a4", fontSize:13, margin:"6px 0 0" }}>민감 문서를 비밀번호로 보호하여 안전하게 공유하세요</p>
+            </div>
+
+            <div style={{ display:"flex", borderBottom:"2px solid #1a2340" }}>
+              <button style={tabStyle("create")}    onClick={()=>setTab("create")}>링크 생성</button>
+              <button style={tabStyle("list")}      onClick={()=>{ setTab("list"); refreshDocs(); }}>생성 목록 ({docs.length})</button>
+              <button style={tabStyle("defaultpw")} onClick={()=>setTab("defaultpw")}>디폴트 비밀번호</button>
+            </div>
+
+            <div style={{ background:"#fff", borderRadius:"0 8px 8px 8px", padding:32, boxShadow:"0 4px 20px rgba(26,35,64,0.08)" }}>
+
+              {/* CREATE */}
+              {tab==="create" && (
+                <div>
+                  {created && (
+                    <div style={{ background:"linear-gradient(135deg,#1a2340,#2d3a6b)", borderRadius:12, padding:24, marginBottom:28, position:"relative", overflow:"hidden" }}>
+                      <div style={{ position:"absolute", right:-20, top:-20, width:120, height:120, borderRadius:"50%", background:"rgba(233,30,140,0.15)" }}/>
+                      <div style={{ color:"#e91e8c", fontWeight:700, fontSize:11, letterSpacing:2, marginBottom:8 }}>✓ 링크 생성 완료</div>
+                      <div style={{ color:"#fff", fontWeight:700, fontSize:15, marginBottom:6 }}>{created.id}</div>
+                      <div style={{ background:"rgba(255,255,255,0.1)", borderRadius:8, padding:"10px 14px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, marginTop:12 }}>
+                        <span style={{ color:"#c8d0e0", fontSize:11, wordBreak:"break-all", flex:1 }}>{shareLink}</span>
+                        <button onClick={()=>{ navigator.clipboard.writeText(shareLink).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),2000); }); }}
+                          style={{ background:copied?"#e91e8c":"rgba(233,30,140,0.2)", color:copied?"#fff":"#e91e8c", border:"1px solid #e91e8c", borderRadius:6, padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:12, whiteSpace:"nowrap", transition:"all .2s" }}>
+                          {copied ? "✓ 복사됨" : "링크 복사"}
+                        </button>
+                      </div>
+                      <button onClick={()=>setCreated(null)} style={{ marginTop:12, background:"transparent", border:"none", color:"#8892a4", fontSize:11, cursor:"pointer" }}>닫기</button>
+                    </div>
+                  )}
+
+                  {error && <div style={{ background:"#fff0f4", border:"1px solid #e91e8c", borderRadius:8, padding:"10px 14px", color:"#c4166e", fontSize:13, marginBottom:20 }}>{error}</div>}
+
+                  <Field label="문서 URL (Google Drive 등)">
+                    <input value={form.url} onChange={e=>setForm({...form,url:e.target.value})} placeholder="https://drive.google.com/file/d/..." style={inputStyle}/>
+                  </Field>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+                    <Field label="비밀번호 설정">
+                      <input type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder="비밀번호 입력" style={inputStyle}/>
+                    </Field>
+                    <Field label="비밀번호 확인">
+                      <input type="password" value={form.confirmPw} onChange={e=>setForm({...form,confirmPw:e.target.value})} placeholder="비밀번호 재입력"
+                        style={{...inputStyle, borderColor:form.confirmPw&&form.confirmPw!==form.password?"#e91e8c":"#dde1ea"}}/>
+                    </Field>
                   </div>
-                  <button onClick={() => setCreated(null)} style={{ marginTop:12, background:"transparent", border:"none", color:"#8892a4", fontSize:11, cursor:"pointer" }}>닫기</button>
+                  <Field label="비밀번호 만료 설정">
+                    <div style={{ display:"flex", gap:10 }}>
+                      <input type="date" value={form.expiryDate} onChange={e=>setForm({...form,expiryDate:e.target.value})} style={{...inputStyle,flex:1}}/>
+                      <select value={form.expiryHour} onChange={e=>setForm({...form,expiryHour:e.target.value})} style={{...inputStyle,width:110}}>
+                        {Array.from({length:24},(_,i)=><option key={i} value={i}>{String(i).padStart(2,"0")}:00</option>)}
+                      </select>
+                    </div>
+                    <p style={{ color:"#aab0be", fontSize:11, margin:"6px 0 0" }}>만료 후 디폴트 비밀번호로 자동 전환됩니다</p>
+                  </Field>
+                  <button onClick={handleCreate} disabled={saving}
+                    style={{ width:"100%", background: saving?"#aab0be":"linear-gradient(135deg,#e91e8c,#c4166e)", color:"#fff", border:"none", borderRadius:10, padding:"14px 0", fontWeight:800, fontSize:15, cursor: saving?"not-allowed":"pointer", letterSpacing:0.5, boxShadow:"0 4px 16px rgba(233,30,140,0.35)", marginTop:8, fontFamily:"'Sora',sans-serif" }}>
+                    {saving ? "저장 중..." : "설정 완료 · 공유 링크 생성"}
+                  </button>
                 </div>
               )}
 
-              {error && <div style={{ background:"#fff0f4", border:"1px solid #e91e8c", borderRadius:8, padding:"10px 14px", color:"#c4166e", fontSize:13, marginBottom:20 }}>{error}</div>}
+              {/* LIST */}
+              {tab==="list" && (
+                <div>
+                  {docs.length===0
+                    ? <div style={{ textAlign:"center", color:"#aab0be", padding:"40px 0", fontSize:14 }}>생성된 링크가 없습니다</div>
+                    : <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+                        {[...docs].sort((a,b)=>b.createdAt?.localeCompare(a.createdAt||"")||0).map(doc => {
+                          const expired  = new Date(doc.expiry) < new Date();
+                          const activePw = expired ? defaultPw : doc.password;
+                          return (
+                            <div key={doc.id} style={{ border:"1px solid #dde1ea", borderRadius:10, padding:16, position:"relative", overflow:"hidden" }}>
+                              <div style={{ position:"absolute", top:0, left:0, width:4, height:"100%", background:expired?"#aab0be":"#e91e8c" }}/>
+                              <div style={{ paddingLeft:8 }}>
+                                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", flexWrap:"wrap", gap:8 }}>
+                                  <div style={{ fontWeight:700, fontSize:13, color:"#1a2340" }}>{doc.id}</div>
+                                  <span style={{ background:expired?"#f0f2f7":"#fff0f8", color:expired?"#8892a4":"#e91e8c", fontSize:10, fontWeight:700, padding:"3px 8px", borderRadius:20, border:`1px solid ${expired?"#dde1ea":"#f9a8d4"}` }}>
+                                    {expired?"만료됨 (디폴트 PW)":"활성"}
+                                  </span>
+                                </div>
+                                <div style={{ color:"#8892a4", fontSize:11, marginTop:4, wordBreak:"break-all" }}>{doc.url?.length>60?doc.url.slice(0,60)+"...":doc.url}</div>
+                                <div style={{ display:"flex", gap:16, marginTop:8, flexWrap:"wrap" }}>
+                                  <InfoChip label="만료" value={new Date(doc.expiry).toLocaleString("ko-KR")}/>
+                                  <InfoChip label="현재 PW" value={activePw}/>
+                                  <InfoChip label="조회" value={`${doc.viewCount||0}회`}/>
+                                </div>
+                                <div style={{ display:"flex", gap:8, marginTop:12 }}>
+                                  <button onClick={()=>window.open(doc.url,"_blank")}
+                                    style={{ flex:1, background:"linear-gradient(135deg,#1a2340,#2d3a6b)", color:"#fff", border:"none", borderRadius:8, padding:"9px 0", fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"'Sora',sans-serif" }}>
+                                    📄 문서 바로가기
+                                  </button>
+                                  <CopyLinkBtn docId={doc.id}/>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                  }
+                </div>
+              )}
 
-              <Field label="문서 URL (Google Drive 등)">
-                <input value={form.url} onChange={e => setForm({...form, url:e.target.value})} placeholder="https://drive.google.com/file/d/..." style={inputStyle}/>
-              </Field>
+              {/* DEFAULT PW */}
+              {tab==="defaultpw" && (
+                <div>
+                  <div style={{ background:"linear-gradient(135deg,#1a2340,#2d3a6b)", borderRadius:12, padding:20, marginBottom:24, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                    <div>
+                      <div style={{ color:"#8892a4", fontSize:11, letterSpacing:1 }}>현재 디폴트 비밀번호</div>
+                      <div style={{ color:"#e91e8c", fontWeight:800, fontSize:28, letterSpacing:8, marginTop:4 }}>{showDef?defaultPw:"••••"}</div>
+                    </div>
+                    <button onClick={()=>setShowDef(!showDef)} style={{ background:"rgba(233,30,140,0.15)", border:"1px solid rgba(233,30,140,0.3)", color:"#e91e8c", borderRadius:8, padding:"8px 16px", cursor:"pointer", fontSize:12, fontWeight:600 }}>
+                      {showDef?"숨기기":"확인"}
+                    </button>
+                  </div>
+                  {pwError && <div style={{ background:"#fff0f4", border:"1px solid #e91e8c", borderRadius:8, padding:"10px 14px", color:"#c4166e", fontSize:13, marginBottom:16 }}>{pwError}</div>}
+                  <Field label="새 디폴트 비밀번호 (4자리 숫자)">
+                    <input type="text" maxLength={4} value={newDefaultPw} onChange={e=>setNewDPw(e.target.value.replace(/\D/g,""))}
+                      placeholder="4자리 숫자 입력" style={{...inputStyle,letterSpacing:8,fontSize:18,fontWeight:700}}/>
+                  </Field>
+                  <Field label="비밀번호 확인">
+                    <input type="text" maxLength={4} value={confirmDef} onChange={e=>setConfDef(e.target.value.replace(/\D/g,""))}
+                      placeholder="4자리 숫자 재입력" style={{...inputStyle,letterSpacing:8,fontSize:18,fontWeight:700}}/>
+                  </Field>
+                  <button onClick={handleSetDefault} style={{ width:"100%", background:"linear-gradient(135deg,#e91e8c,#c4166e)", color:"#fff", border:"none", borderRadius:10, padding:"13px 0", fontWeight:800, fontSize:14, cursor:"pointer", fontFamily:"'Sora',sans-serif" }}>
+                    디폴트 비밀번호 변경
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
 
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
-                <Field label="비밀번호 설정">
-                  <input type="password" value={form.password} onChange={e => setForm({...form, password:e.target.value})} placeholder="비밀번호 입력" style={inputStyle}/>
-                </Field>
-                <Field label="비밀번호 확인">
-                  <input type="password" value={form.confirmPw} onChange={e => setForm({...form, confirmPw:e.target.value})} placeholder="비밀번호 재입력"
-                    style={{...inputStyle, borderColor: form.confirmPw && form.confirmPw !== form.password ? "#e91e8c" : "#dde1ea"}}/>
-                </Field>
+    // ── PASSWORD PAGE ──────────────────────────────────────────────────────────
+    function PasswordPage({ docId, docs, defaultPw, onSuccess, loading }) {
+      const [password, setPassword] = useState("");
+      const [dept,     setDept]     = useState("");
+      const [error,    setError]    = useState("");
+      const [shake,    setShake]    = useState(false);
+      const [checking, setChecking] = useState(false);
+
+      if (loading) return (
+        <div style={{ minHeight:"100vh", background:"linear-gradient(160deg,#0d1526 0%,#1a2340 50%,#0d1526 100%)", display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <Loader text="문서 정보를 불러오는 중..."/>
+        </div>
+      );
+
+      const doc = docs.find(d => d.id === docId);
+
+      const handleSubmit = async () => {
+        setError("");
+        if (!dept.trim()) { setError("소속 및 직책을 입력해주세요."); return; }
+        if (!password)    { setError("비밀번호를 입력해주세요."); return; }
+        if (!doc)         { setError("존재하지 않는 문서입니다. 링크를 다시 확인해주세요."); return; }
+
+        const expired  = new Date(doc.expiry) < new Date();
+        const activePw = expired ? defaultPw : doc.password;
+
+        if (password !== activePw) {
+          setShake(true);
+          setError("비밀번호가 올바르지 않습니다.");
+          setTimeout(()=>setShake(false), 500);
+          return;
+        }
+
+        setChecking(true);
+        await window.DB.addLog({ docId, name:dept.trim(), time:new Date().toISOString(), linkId:doc.id });
+        await window.DB.incViewCount(docId);
+        setChecking(false);
+        onSuccess(doc.url);
+      };
+
+      const pageInput = {
+        width:"100%", background:"rgba(255,255,255,0.07)",
+        border:"1px solid rgba(255,255,255,0.15)", borderRadius:10,
+        padding:"12px 14px", color:"#fff", fontSize:15,
+        outline:"none", boxSizing:"border-box", fontFamily:"'Sora',sans-serif", transition:"border-color .2s"
+      };
+
+      return (
+        <div style={{ minHeight:"100vh", background:"linear-gradient(160deg,#0d1526 0%,#1a2340 50%,#0d1526 100%)", display:"flex", flexDirection:"column", fontFamily:"'Sora',sans-serif", position:"relative", overflow:"hidden" }}>
+          <div style={{ position:"absolute", top:-120, right:-120, width:400, height:400, borderRadius:"50%", background:"radial-gradient(circle,rgba(233,30,140,0.12) 0%,transparent 70%)" }}/>
+          <div style={{ position:"absolute", bottom:-80, left:-80, width:300, height:300, borderRadius:"50%", background:"radial-gradient(circle,rgba(233,30,140,0.08) 0%,transparent 70%)" }}/>
+
+          <div style={{ padding:"20px 32px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <IDHLogo dark />
+            <div style={{ color:"rgba(255,255,255,0.3)", fontSize:10, letterSpacing:2, textTransform:"uppercase" }}>Secure Document Access</div>
+          </div>
+
+          <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", padding:"20px 16px" }}>
+            <div style={{ width:"100%", maxWidth:400 }}>
+              <div style={{ textAlign:"center", marginBottom:32 }}>
+                <div style={{ width:72, height:72, background:"linear-gradient(135deg,#e91e8c,#c4166e)", borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px", boxShadow:"0 8px 32px rgba(233,30,140,0.4)" }}>
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+                    <rect x="5" y="11" width="14" height="10" rx="2" fill="white"/>
+                    <path d="M8 11V7a4 4 0 018 0v4" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                  </svg>
+                </div>
+                <h2 style={{ color:"#fff", fontSize:22, fontWeight:800, margin:0, letterSpacing:-0.5 }}>보안 문서 접근</h2>
+                <p style={{ color:"rgba(255,255,255,0.5)", fontSize:13, marginTop:6 }}>소속 · 직책과 비밀번호를 입력하여 문서를 확인하세요</p>
+                {docId && <div style={{ color:"#e91e8c", fontSize:11, marginTop:6, fontWeight:600, letterSpacing:1 }}>{docId}</div>}
               </div>
 
-              <Field label="비밀번호 만료 설정">
-                <div style={{ display:"flex", gap:10 }}>
-                  <input type="date" value={form.expiryDate} onChange={e => setForm({...form, expiryDate:e.target.value})} style={{...inputStyle, flex:1}}/>
-                  <select value={form.expiryHour} onChange={e => setForm({...form, expiryHour:e.target.value})} style={{...inputStyle, width:110}}>
-                    {Array.from({length:24},(_,i) => <option key={i} value={i}>{String(i).padStart(2,"0")}:00</option>)}
-                  </select>
+              <style>{`@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-6px)}80%{transform:translateX(6px)}}`}</style>
+              <div style={{ animation:shake?"shake 0.4s":"none" }}>
+                {error && <div style={{ background:"rgba(233,30,140,0.15)", border:"1px solid rgba(233,30,140,0.4)", borderRadius:10, padding:"12px 16px", color:"#f472b6", fontSize:13, marginBottom:16, textAlign:"center" }}>{error}</div>}
+                <div style={{ background:"rgba(255,255,255,0.05)", backdropFilter:"blur(20px)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:16, padding:28 }}>
+                  <div style={{ marginBottom:18 }}>
+                    <label style={{ color:"rgba(255,255,255,0.6)", fontSize:11, letterSpacing:1, display:"block", marginBottom:8, textTransform:"uppercase" }}>소속 및 직책</label>
+                    <input value={dept} onChange={e=>setDept(e.target.value)} placeholder="소속 및 직책 입력 (예: 기획조정실 팀장)"
+                      style={pageInput}
+                      onFocus={e=>e.target.style.borderColor="#e91e8c"}
+                      onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.15)"}/>
+                  </div>
+                  <div style={{ marginBottom:24 }}>
+                    <label style={{ color:"rgba(255,255,255,0.6)", fontSize:11, letterSpacing:1, display:"block", marginBottom:8, textTransform:"uppercase" }}>비밀번호</label>
+                    <input type="password" value={password} onChange={e=>setPassword(e.target.value)}
+                      placeholder="비밀번호 입력" onKeyDown={e=>e.key==="Enter"&&handleSubmit()}
+                      style={{...pageInput, letterSpacing:4}}
+                      onFocus={e=>e.target.style.borderColor="#e91e8c"}
+                      onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.15)"}/>
+                  </div>
+                  <button onClick={handleSubmit} disabled={checking}
+                    style={{ width:"100%", background:checking?"#aab0be":"linear-gradient(135deg,#e91e8c,#c4166e)", color:"#fff", border:"none", borderRadius:10, padding:"14px 0", fontWeight:800, fontSize:15, cursor:checking?"not-allowed":"pointer", boxShadow:"0 4px 20px rgba(233,30,140,0.4)", fontFamily:"'Sora',sans-serif", letterSpacing:0.5 }}>
+                    {checking ? "확인 중..." : "문서 열기 →"}
+                  </button>
                 </div>
-                <p style={{ color:"#aab0be", fontSize:11, margin:"6px 0 0" }}>만료 후 디폴트 비밀번호로 자동 전환됩니다</p>
-              </Field>
-
-              <button onClick={handleCreate}
-                style={{ width:"100%", background:"linear-gradient(135deg,#e91e8c,#c4166e)", color:"#fff", border:"none", borderRadius:10, padding:"14px 0", fontWeight:800, fontSize:15, cursor:"pointer", letterSpacing:0.5, boxShadow:"0 4px 16px rgba(233,30,140,0.35)", marginTop:8, fontFamily:"'Sora',sans-serif" }}
-                onMouseDown={e => e.currentTarget.style.transform="scale(0.98)"}
-                onMouseUp={e   => e.currentTarget.style.transform="scale(1)"}
-              >설정 완료 · 공유 링크 생성</button>
+              </div>
             </div>
-          )}
+          </div>
 
-          {/* ── LIST ── */}
-          {tab === "list" && (
-            <div>
-              {docs.length === 0
-                ? <div style={{ textAlign:"center", color:"#aab0be", padding:"40px 0", fontSize:14 }}>생성된 링크가 없습니다</div>
-                : <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-                    {[...docs].reverse().map(doc => {
-                      const expired  = new Date(doc.expiry) < new Date();
-                      const activePw = expired ? defaultPw : doc.password;
-                      return (
-                        <div key={doc.id} style={{ border:"1px solid #dde1ea", borderRadius:10, padding:16, position:"relative", overflow:"hidden" }}>
-                          <div style={{ position:"absolute", top:0, left:0, width:4, height:"100%", background: expired ? "#aab0be" : "#e91e8c" }}/>
-                          <div style={{ paddingLeft:8 }}>
-                            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", flexWrap:"wrap", gap:8 }}>
-                              <div style={{ fontWeight:700, fontSize:13, color:"#1a2340" }}>{doc.id}</div>
-                              <span style={{ background: expired ? "#f0f2f7" : "#fff0f8", color: expired ? "#8892a4" : "#e91e8c", fontSize:10, fontWeight:700, padding:"3px 8px", borderRadius:20, border:`1px solid ${expired ? "#dde1ea" : "#f9a8d4"}` }}>
-                                {expired ? "만료됨 (디폴트 PW)" : "활성"}
-                              </span>
-                            </div>
-                            <div style={{ color:"#8892a4", fontSize:11, marginTop:4, wordBreak:"break-all" }}>{doc.url.length > 60 ? doc.url.slice(0,60)+"..." : doc.url}</div>
-                            <div style={{ display:"flex", gap:16, marginTop:8, flexWrap:"wrap" }}>
-                              <InfoChip label="만료" value={new Date(doc.expiry).toLocaleString("ko-KR")}/>
-                              <InfoChip label="현재 PW" value={activePw}/>
-                              <InfoChip label="조회" value={`${doc.viewCount}회`}/>
-                            </div>
-                            <div style={{ display:"flex", gap:8, marginTop:12 }}>
-                              <button
-                                onClick={() => window.open(doc.url, "_blank")}
-                                style={{ flex:1, background:"linear-gradient(135deg,#1a2340,#2d3a6b)", color:"#fff", border:"none", borderRadius:8, padding:"9px 0", fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"'Sora',sans-serif", letterSpacing:0.3 }}>
-                                📄 문서 바로가기
-                              </button>
-                              <CopyLinkBtn docId={doc.id}/>
-                            </div>
+          <div style={{ padding:"20px 32px", textAlign:"center", borderTop:"1px solid rgba(255,255,255,0.06)" }}>
+            <div style={{ color:"rgba(255,255,255,0.5)", fontSize:11, letterSpacing:1.5, textTransform:"uppercase", lineHeight:1.8 }}>IDH · Planning & Coordination Dept.</div>
+            <div style={{ color:"rgba(255,255,255,0.25)", fontSize:10, marginTop:4 }}>ID Hospital · 서울시 강남구 도산대로 142</div>
+          </div>
+        </div>
+      );
+    }
+
+    // ── STATS PAGE ─────────────────────────────────────────────────────────────
+    function StatsPage({ docs, logs, loadingLogs }) {
+      const docStats = docs.map(doc => {
+        const docLogs = logs.filter(l => l.docId === doc.id);
+        const viewers = [...new Set(docLogs.map(l => l.name))];
+        return { ...doc, docLogs, viewers };
+      });
+
+      return (
+        <div style={{ minHeight:"100vh", background:"#f0f2f7", fontFamily:"'Sora',sans-serif", paddingBottom:80 }}>
+          <div style={{ background:"#1a2340", padding:"0 32px", display:"flex", alignItems:"center", justifyContent:"space-between", height:64, boxShadow:"0 2px 12px rgba(26,35,64,0.2)" }}>
+            <IDHLogo dark />
+            <div style={{ color:"#e91e8c", fontWeight:700, fontSize:13, letterSpacing:2, textTransform:"uppercase" }}>문서 열람 통계</div>
+          </div>
+
+          <div style={{ maxWidth:800, margin:"40px auto", padding:"0 16px" }}>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:16, marginBottom:32 }}>
+              {[
+                { label:"전체 공유 문서",       value:docs.length,                           icon:"📄" },
+                { label:"전체 열람 횟수",        value:logs.length,                           icon:"👁" },
+                { label:"열람자 수 (중복제거)",  value:new Set(logs.map(l=>l.name)).size,     icon:"👤" },
+              ].map((c,i)=>(
+                <div key={i} style={{ background:"#fff", borderRadius:12, padding:20, boxShadow:"0 2px 12px rgba(26,35,64,0.07)", textAlign:"center" }}>
+                  <div style={{ fontSize:28, marginBottom:8 }}>{c.icon}</div>
+                  <div style={{ fontSize:28, fontWeight:800, color:"#1a2340" }}>{c.value}</div>
+                  <div style={{ color:"#8892a4", fontSize:11, marginTop:2 }}>{c.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {loadingLogs ? <Loader text="통계 불러오는 중..."/> :
+              docStats.length===0
+                ? <div style={{ background:"#fff", borderRadius:12, padding:40, textAlign:"center", color:"#aab0be" }}>공유된 문서가 없습니다</div>
+                : docStats.map(doc=>(
+                    <div key={doc.id} style={{ background:"#fff", borderRadius:12, marginBottom:16, overflow:"hidden", boxShadow:"0 2px 12px rgba(26,35,64,0.07)" }}>
+                      <div style={{ background:"linear-gradient(135deg,#1a2340,#2d3a6b)", padding:"16px 20px", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8 }}>
+                        <div>
+                          <div style={{ color:"#e91e8c", fontSize:11, fontWeight:700, letterSpacing:1 }}>DOCUMENT</div>
+                          <div style={{ color:"#fff", fontWeight:700, fontSize:14, marginTop:2 }}>{doc.id}</div>
+                        </div>
+                        <div style={{ display:"flex", gap:12 }}>
+                          <div style={{ textAlign:"center" }}>
+                            <div style={{ color:"#e91e8c", fontWeight:800, fontSize:20 }}>{doc.viewCount||0}</div>
+                            <div style={{ color:"rgba(255,255,255,0.5)", fontSize:10 }}>열람 횟수</div>
+                          </div>
+                          <div style={{ textAlign:"center" }}>
+                            <div style={{ color:"#e91e8c", fontWeight:800, fontSize:20 }}>{doc.viewers.length}</div>
+                            <div style={{ color:"rgba(255,255,255,0.5)", fontSize:10 }}>열람자</div>
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
-              }
-            </div>
-          )}
-
-          {/* ── DEFAULT PW ── */}
-          {tab === "defaultpw" && (
-            <div>
-              <div style={{ background:"linear-gradient(135deg,#1a2340,#2d3a6b)", borderRadius:12, padding:20, marginBottom:24, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                <div>
-                  <div style={{ color:"#8892a4", fontSize:11, letterSpacing:1 }}>현재 디폴트 비밀번호</div>
-                  <div style={{ color:"#e91e8c", fontWeight:800, fontSize:28, letterSpacing:8, marginTop:4 }}>{showDefault ? defaultPw : "••••"}</div>
-                </div>
-                <button onClick={() => setShowDef(!showDefault)} style={{ background:"rgba(233,30,140,0.15)", border:"1px solid rgba(233,30,140,0.3)", color:"#e91e8c", borderRadius:8, padding:"8px 16px", cursor:"pointer", fontSize:12, fontWeight:600 }}>
-                  {showDefault ? "숨기기" : "확인"}
-                </button>
-              </div>
-
-              {pwError && <div style={{ background:"#fff0f4", border:"1px solid #e91e8c", borderRadius:8, padding:"10px 14px", color:"#c4166e", fontSize:13, marginBottom:16 }}>{pwError}</div>}
-
-              <Field label="새 디폴트 비밀번호 (4자리 숫자)">
-                <input type="text" maxLength={4} value={newDefaultPw} onChange={e => setNewDPw(e.target.value.replace(/\D/g,""))}
-                  placeholder="4자리 숫자 입력" style={{...inputStyle, letterSpacing:8, fontSize:18, fontWeight:700}}/>
-              </Field>
-              <Field label="비밀번호 확인">
-                <input type="text" maxLength={4} value={confirmDefault} onChange={e => setConf(e.target.value.replace(/\D/g,""))}
-                  placeholder="4자리 숫자 재입력" style={{...inputStyle, letterSpacing:8, fontSize:18, fontWeight:700}}/>
-              </Field>
-              <button onClick={handleSetDefault} style={{ width:"100%", background:"linear-gradient(135deg,#e91e8c,#c4166e)", color:"#fff", border:"none", borderRadius:10, padding:"13px 0", fontWeight:800, fontSize:14, cursor:"pointer", fontFamily:"'Sora',sans-serif" }}>
-                디폴트 비밀번호 변경
-              </button>
-            </div>
-          )}
+                      </div>
+                      {doc.docLogs.length>0
+                        ? <div style={{ padding:"0 20px 16px" }}>
+                            <table style={{ width:"100%", borderCollapse:"collapse", marginTop:16 }}>
+                              <thead>
+                                <tr>{["소속 및 직책","열람 시간"].map(h=>(
+                                  <th key={h} style={{ textAlign:"left", color:"#8892a4", fontSize:11, fontWeight:600, padding:"8px 0", borderBottom:"1px solid #eee", letterSpacing:0.5 }}>{h}</th>
+                                ))}</tr>
+                              </thead>
+                              <tbody>
+                                {[...doc.docLogs].reverse().map((log,i)=>(
+                                  <tr key={i} style={{ borderBottom:"1px solid #f5f6f9" }}>
+                                    <td style={{ padding:"10px 0", color:"#1a2340", fontWeight:600, fontSize:13 }}>{log.name}</td>
+                                    <td style={{ padding:"10px 0", color:"#8892a4", fontSize:12 }}>{new Date(log.time).toLocaleString("ko-KR")}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        : <div style={{ padding:"16px 20px", color:"#aab0be", fontSize:13 }}>아직 열람 기록이 없습니다</div>
+                      }
+                    </div>
+                  ))
+            }
+          </div>
         </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── PASSWORD PAGE ────────────────────────────────────────────────────────────
-function PasswordPage({ docId, docs, defaultPw, onSuccess }) {
-  const [password, setPassword] = useState("");
-  const [dept,     setDept]     = useState("");
-  const [error,    setError]    = useState("");
-  const [shake,    setShake]    = useState(false);
-
-  const doc = docs.find(d => d.id === docId);
-
-  const handleSubmit = () => {
-    setError("");
-    if (!dept.trim()) { setError("소속 및 직책을 입력해주세요."); return; }
-    if (!password)    { setError("비밀번호를 입력해주세요."); return; }
-    if (!doc)         { setError("존재하지 않는 문서입니다."); return; }
-
-    const expired  = new Date(doc.expiry) < new Date();
-    const activePw = expired ? defaultPw : doc.password;
-
-    if (password !== activePw) {
-      setShake(true);
-      setError("비밀번호가 올바르지 않습니다.");
-      setTimeout(() => setShake(false), 500);
-      return;
+      );
     }
 
-    // Log
-    const logs = loadLogs();
-    logs.push({ docId, name: dept.trim(), time: new Date().toISOString(), linkId: doc.id });
-    saveLogs(logs);
-
-    // View count
-    const stored  = loadDocs();
-    const updated = { ...stored, documents: stored.documents.map(d => d.id === docId ? {...d, viewCount:(d.viewCount||0)+1} : d) };
-    saveDocs(updated);
-
-    onSuccess(doc.url, dept.trim());
-  };
-
-  const pageInput = {
-    width:"100%", background:"rgba(255,255,255,0.07)",
-    border:"1px solid rgba(255,255,255,0.15)", borderRadius:10,
-    padding:"12px 14px", color:"#fff", fontSize:15,
-    outline:"none", boxSizing:"border-box", fontFamily:"'Sora',sans-serif", transition:"border-color .2s"
-  };
-
-  return (
-    <div style={{ minHeight:"100vh", background:"linear-gradient(160deg,#0d1526 0%,#1a2340 50%,#0d1526 100%)", display:"flex", flexDirection:"column", fontFamily:"'Sora',sans-serif", position:"relative", overflow:"hidden" }}>
-      <div style={{ position:"absolute", top:-120, right:-120, width:400, height:400, borderRadius:"50%", background:"radial-gradient(circle,rgba(233,30,140,0.12) 0%,transparent 70%)" }}/>
-      <div style={{ position:"absolute", bottom:-80, left:-80, width:300, height:300, borderRadius:"50%", background:"radial-gradient(circle,rgba(233,30,140,0.08) 0%,transparent 70%)" }}/>
-
-      <div style={{ padding:"20px 32px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-        <IDHLogo dark />
-        <div style={{ color:"rgba(255,255,255,0.3)", fontSize:10, letterSpacing:2, textTransform:"uppercase" }}>Secure Document Access</div>
-      </div>
-
-      <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", padding:"20px 16px" }}>
-        <div style={{ width:"100%", maxWidth:400 }}>
-          <div style={{ textAlign:"center", marginBottom:32 }}>
-            <div style={{ width:72, height:72, background:"linear-gradient(135deg,#e91e8c,#c4166e)", borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px", boxShadow:"0 8px 32px rgba(233,30,140,0.4)" }}>
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
-                <rect x="5" y="11" width="14" height="10" rx="2" fill="white"/>
-                <path d="M8 11V7a4 4 0 018 0v4" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
-            </div>
-            <h2 style={{ color:"#fff", fontSize:22, fontWeight:800, margin:0, letterSpacing:-0.5 }}>보안 문서 접근</h2>
-            <p style={{ color:"rgba(255,255,255,0.5)", fontSize:13, marginTop:6 }}>소속 · 직책과 비밀번호를 입력하여 문서를 확인하세요</p>
-            {docId && <div style={{ color:"#e91e8c", fontSize:11, marginTop:6, fontWeight:600, letterSpacing:1 }}>{docId}</div>}
-          </div>
-
-          <style>{`@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-6px)}80%{transform:translateX(6px)}}`}</style>
-          <div style={{ animation: shake ? "shake 0.4s" : "none" }}>
-            {error && <div style={{ background:"rgba(233,30,140,0.15)", border:"1px solid rgba(233,30,140,0.4)", borderRadius:10, padding:"12px 16px", color:"#f472b6", fontSize:13, marginBottom:16, textAlign:"center" }}>{error}</div>}
-
-            <div style={{ background:"rgba(255,255,255,0.05)", backdropFilter:"blur(20px)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:16, padding:28 }}>
-              <div style={{ marginBottom:18 }}>
-                <label style={{ color:"rgba(255,255,255,0.6)", fontSize:11, letterSpacing:1, display:"block", marginBottom:8, textTransform:"uppercase" }}>소속 및 직책</label>
-                <input value={dept} onChange={e => setDept(e.target.value)}
-                  placeholder="소속 및 직책 입력 (예: 기획조정실 팀장)"
-                  style={pageInput}
-                  onFocus={e => e.target.style.borderColor="#e91e8c"}
-                  onBlur={e  => e.target.style.borderColor="rgba(255,255,255,0.15)"}
-                />
-              </div>
-              <div style={{ marginBottom:24 }}>
-                <label style={{ color:"rgba(255,255,255,0.6)", fontSize:11, letterSpacing:1, display:"block", marginBottom:8, textTransform:"uppercase" }}>비밀번호</label>
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-                  placeholder="비밀번호 입력"
-                  onKeyDown={e => e.key === "Enter" && handleSubmit()}
-                  style={{...pageInput, letterSpacing:4}}
-                  onFocus={e => e.target.style.borderColor="#e91e8c"}
-                  onBlur={e  => e.target.style.borderColor="rgba(255,255,255,0.15)"}
-                />
-              </div>
-              <button onClick={handleSubmit} style={{ width:"100%", background:"linear-gradient(135deg,#e91e8c,#c4166e)", color:"#fff", border:"none", borderRadius:10, padding:"14px 0", fontWeight:800, fontSize:15, cursor:"pointer", boxShadow:"0 4px 20px rgba(233,30,140,0.4)", fontFamily:"'Sora',sans-serif", letterSpacing:0.5 }}>
-                문서 열기 →
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div style={{ padding:"20px 32px", textAlign:"center", borderTop:"1px solid rgba(255,255,255,0.06)" }}>
-        <div style={{ color:"rgba(255,255,255,0.5)", fontSize:11, letterSpacing:1.5, textTransform:"uppercase", lineHeight:1.8 }}>IDH · Planning & Coordination Dept.</div>
-        <div style={{ color:"rgba(255,255,255,0.25)", fontSize:10, marginTop:4 }}>ID Hospital · 서울시 강남구 도산대로 142</div>
-      </div>
-    </div>
-  );
-}
-
-// ─── STATS PAGE ───────────────────────────────────────────────────────────────
-function StatsPage({ docs, logs }) {
-  const docStats = docs.map(doc => {
-    const docLogs = logs.filter(l => l.docId === doc.id);
-    const viewers = [...new Set(docLogs.map(l => l.name))];
-    return { ...doc, docLogs, viewers };
-  });
-
-  return (
-    <div style={{ minHeight:"100vh", background:"#f0f2f7", fontFamily:"'Sora',sans-serif" }}>
-      <div style={{ background:"#1a2340", padding:"0 32px", display:"flex", alignItems:"center", justifyContent:"space-between", height:64, boxShadow:"0 2px 12px rgba(26,35,64,0.2)" }}>
-        <IDHLogo dark />
-        <div style={{ color:"#e91e8c", fontWeight:700, fontSize:13, letterSpacing:2, textTransform:"uppercase" }}>문서 열람 통계</div>
-      </div>
-
-      <div style={{ maxWidth:800, margin:"40px auto", padding:"0 16px" }}>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:16, marginBottom:32 }}>
-          {[
-            { label:"전체 공유 문서",      value: docs.length,                              icon:"📄" },
-            { label:"전체 열람 횟수",      value: logs.length,                              icon:"👁" },
-            { label:"열람자 수 (중복제거)", value: new Set(logs.map(l => l.name)).size,      icon:"👤" },
-          ].map((c,i) => (
-            <div key={i} style={{ background:"#fff", borderRadius:12, padding:20, boxShadow:"0 2px 12px rgba(26,35,64,0.07)", textAlign:"center" }}>
-              <div style={{ fontSize:28, marginBottom:8 }}>{c.icon}</div>
-              <div style={{ fontSize:28, fontWeight:800, color:"#1a2340" }}>{c.value}</div>
-              <div style={{ color:"#8892a4", fontSize:11, marginTop:2 }}>{c.label}</div>
-            </div>
+    // ── NAV BAR ────────────────────────────────────────────────────────────────
+    function NavBar({ page, setPage }) {
+      return (
+        <div style={{ position:"fixed", bottom:16, left:"50%", transform:"translateX(-50%)", background:"rgba(26,35,64,0.95)", backdropFilter:"blur(12px)", borderRadius:50, padding:"8px 20px", display:"flex", gap:4, zIndex:999, boxShadow:"0 4px 24px rgba(0,0,0,0.3)", border:"1px solid rgba(255,255,255,0.1)" }}>
+          {[{id:"admin",label:"Admin"},{id:"stats",label:"통계"}].map(it=>(
+            <button key={it.id} onClick={()=>setPage(it.id)}
+              style={{ background:page===it.id?"#e91e8c":"transparent", color:page===it.id?"#fff":"rgba(255,255,255,0.6)", border:"none", borderRadius:24, padding:"7px 18px", cursor:"pointer", fontWeight:700, fontSize:12, fontFamily:"'Sora',sans-serif", transition:"all .2s", whiteSpace:"nowrap" }}>
+              {it.label}
+            </button>
           ))}
         </div>
-
-        {docStats.length === 0
-          ? <div style={{ background:"#fff", borderRadius:12, padding:40, textAlign:"center", color:"#aab0be" }}>공유된 문서가 없습니다</div>
-          : docStats.map(doc => (
-              <div key={doc.id} style={{ background:"#fff", borderRadius:12, marginBottom:16, overflow:"hidden", boxShadow:"0 2px 12px rgba(26,35,64,0.07)" }}>
-                <div style={{ background:"linear-gradient(135deg,#1a2340,#2d3a6b)", padding:"16px 20px", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8 }}>
-                  <div>
-                    <div style={{ color:"#e91e8c", fontSize:11, fontWeight:700, letterSpacing:1 }}>DOCUMENT</div>
-                    <div style={{ color:"#fff", fontWeight:700, fontSize:14, marginTop:2 }}>{doc.id}</div>
-                  </div>
-                  <div style={{ display:"flex", gap:12 }}>
-                    <div style={{ textAlign:"center" }}>
-                      <div style={{ color:"#e91e8c", fontWeight:800, fontSize:20 }}>{doc.viewCount||0}</div>
-                      <div style={{ color:"rgba(255,255,255,0.5)", fontSize:10 }}>열람 횟수</div>
-                    </div>
-                    <div style={{ textAlign:"center" }}>
-                      <div style={{ color:"#e91e8c", fontWeight:800, fontSize:20 }}>{doc.viewers.length}</div>
-                      <div style={{ color:"rgba(255,255,255,0.5)", fontSize:10 }}>열람자</div>
-                    </div>
-                  </div>
-                </div>
-                {doc.docLogs.length > 0
-                  ? <div style={{ padding:"0 20px 16px" }}>
-                      <table style={{ width:"100%", borderCollapse:"collapse", marginTop:16 }}>
-                        <thead>
-                          <tr>{["소속 및 직책","열람 시간"].map(h => (
-                            <th key={h} style={{ textAlign:"left", color:"#8892a4", fontSize:11, fontWeight:600, padding:"8px 0", borderBottom:"1px solid #eee", letterSpacing:0.5 }}>{h}</th>
-                          ))}</tr>
-                        </thead>
-                        <tbody>
-                          {[...doc.docLogs].reverse().map((log,i) => (
-                            <tr key={i} style={{ borderBottom:"1px solid #f5f6f9" }}>
-                              <td style={{ padding:"10px 0", color:"#1a2340", fontWeight:600, fontSize:13 }}>{log.name}</td>
-                              <td style={{ padding:"10px 0", color:"#8892a4", fontSize:12 }}>{new Date(log.time).toLocaleString("ko-KR")}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  : <div style={{ padding:"16px 20px", color:"#aab0be", fontSize:13 }}>아직 열람 기록이 없습니다</div>
-                }
-              </div>
-            ))
-        }
-      </div>
-    </div>
-  );
-}
-
-// ─── NAV BAR ─────────────────────────────────────────────────────────────────
-function NavBar({ page, setPage }) {
-  const items = [
-    { id:"admin",   label:"Admin" },
-    { id:"stats",   label:"통계" },
-    { id:"preview", label:"접근 화면 미리보기" },
-  ];
-  return (
-    <div style={{ position:"fixed", bottom:16, left:"50%", transform:"translateX(-50%)", background:"rgba(26,35,64,0.95)", backdropFilter:"blur(12px)", borderRadius:50, padding:"8px 20px", display:"flex", gap:4, zIndex:999, boxShadow:"0 4px 24px rgba(0,0,0,0.3)", border:"1px solid rgba(255,255,255,0.1)" }}>
-      {items.map(it => (
-        <button key={it.id} onClick={() => setPage(it.id)}
-          style={{ background: page === it.id ? "#e91e8c" : "transparent", color: page === it.id ? "#fff" : "rgba(255,255,255,0.6)", border:"none", borderRadius:24, padding:"7px 18px", cursor:"pointer", fontWeight:700, fontSize:12, fontFamily:"'Sora',sans-serif", transition:"all .2s", whiteSpace:"nowrap" }}>
-          {it.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-// ─── ROOT ─────────────────────────────────────────────────────────────────────
-function App() {
-  const [docs,       setDocs]      = useState([]);
-  const [counter,    setCounter]   = useState(1);
-  const [defaultPw,  setDefaultPw] = useState("1234");
-  const [logs,       setLogs]      = useState([]);
-  const [page,       setPage]      = useState("admin");
-
-  const urlParams = new URLSearchParams(window.location.search);
-  const viewId    = urlParams.get("view");
-
-  useEffect(() => {
-    const data = loadDocs();
-    setDocs(data.documents);
-    setCounter(data.counter);
-    setDefaultPw(loadDefaultPw());
-    setLogs(loadLogs());
-    if (viewId) setPage("access");
-  }, []);
-
-  const handleAccessSuccess = useCallback((url) => {
-    window.open(url, "_blank");
-  }, []);
-
-  useEffect(() => {
-    if (page === "stats") {
-      setLogs(loadLogs());
-      const d = loadDocs();
-      setDocs(d.documents);
-      setCounter(d.counter);
+      );
     }
-  }, [page]);
 
-  const setDocsAndSave = (newDocs) => {
-    setDocs(newDocs);
-  };
+    // ── ROOT APP ───────────────────────────────────────────────────────────────
+    function App() {
+      const [ready,      setReady]     = useState(false);
+      const [docs,       setDocs]      = useState([]);
+      const [counter,    setCounter]   = useState(1);
+      const [defaultPw,  setDefaultPw] = useState("1234");
+      const [logs,       setLogs]      = useState([]);
+      const [page,       setPage]      = useState("admin");
+      const [loadingDoc, setLoadingDoc]= useState(true);
+      const [loadingLog, setLoadingLog]= useState(false);
 
-  return (
-    <>
-      {page === "admin" && (
-        <AdminPage docs={docs} setDocs={setDocsAndSave} counter={counter} setCounter={setCounter} defaultPw={defaultPw} setDefaultPw={setDefaultPw}/>
-      )}
-      {page === "stats" && <StatsPage docs={docs} logs={logs}/>}
-      {(page === "access" || page === "preview") && (
-        <PasswordPage
-          docId={viewId || docs[0]?.id || "IDH-Planning-Coordination-001"}
-          docs={docs} defaultPw={defaultPw}
-          onSuccess={handleAccessSuccess}
-        />
-      )}
-      {(page === "admin" || page === "stats") && <NavBar page={page} setPage={setPage}/>}
-    </>
-  );
-}
+      const urlParams = new URLSearchParams(window.location.search);
+      const viewId    = urlParams.get("view");
+
+      // Firebase 준비 대기 후 초기 데이터 로드
+      useEffect(()=>{
+        const init = async () => {
+          setDocs(await window.DB.getDocs());
+          setCounter(await window.DB.getCounter());
+          setDefaultPw(await window.DB.getDefaultPw());
+          setLoadingDoc(false);
+          setReady(true);
+          if (viewId) setPage("access");
+        };
+        if (window.DB) { init(); }
+        else { window.addEventListener("firebase-ready", init, {once:true}); }
+      }, []);
+
+      const refreshDocs = async () => {
+        setDocs(await window.DB.getDocs());
+      };
+      const refreshStats = async () => {
+        setLoadingLog(true);
+        setDocs(await window.DB.getDocs());
+        setLogs(await window.DB.getLogs());
+        setLoadingLog(false);
+      };
+
+      useEffect(()=>{ if(page==="stats") refreshStats(); }, [page]);
+
+      const handleAccessSuccess = useCallback((url)=>{ window.open(url,"_blank"); },[]);
+
+      if (!ready) return (
+        <div style={{ minHeight:"100vh", background:"#1a2340", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:20 }}>
+          <IDHLogo dark />
+          <div style={{ marginTop:16 }}><div className="spinner"/></div>
+          <div style={{ color:"rgba(255,255,255,0.4)", fontSize:13 }}>시스템을 불러오는 중...</div>
+        </div>
+      );
+
+      return (
+        <>
+          {page==="admin" && (
+            <AdminPage docs={docs} counter={counter} setCounter={setCounter} defaultPw={defaultPw} setDefaultPw={setDefaultPw} refreshDocs={refreshDocs}/>
+          )}
+          {page==="stats" && <StatsPage docs={docs} logs={logs} loadingLogs={loadingLog}/>}
+          {page==="access" && (
+            <PasswordPage docId={viewId} docs={docs} defaultPw={defaultPw} onSuccess={handleAccessSuccess} loading={loadingDoc}/>
+          )}
+          {(page==="admin"||page==="stats") && <NavBar page={page} setPage={setPage}/>}
+        </>
+      );
+    }
 
     ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
   </script>
