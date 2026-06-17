@@ -21,7 +21,7 @@
   </style>
 </head>
 <body>
-  <div id="root"></div>
+  <div id="root"><div style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:sans-serif;color:#8892a4;font-size:14px;">불러오는 중...</div></div>
 
   <!-- Firebase SDK -->
   <script type="module">
@@ -93,6 +93,7 @@
       },
     };
 
+    window.__DB_READY__ = true;
     window.dispatchEvent(new Event("firebase-ready"));
   </script>
 
@@ -574,18 +575,38 @@
       const urlParams = new URLSearchParams(window.location.search);
       const viewId    = urlParams.get("view");
 
-      // Firebase 준비 대기 후 초기 데이터 로드
+      // Firebase 준비 대기 후 초기 데이터 로드 (폴링 방식 - 타이밍 문제 방지)
       useEffect(()=>{
+        let cancelled = false;
         const init = async () => {
-          setDocs(await window.DB.getDocs());
-          setCounter(await window.DB.getCounter());
-          setDefaultPw(await window.DB.getDefaultPw());
-          setLoadingDoc(false);
-          setReady(true);
-          if (viewId) setPage("access");
+          try {
+            const d = await window.DB.getDocs();
+            const c = await window.DB.getCounter();
+            const p = await window.DB.getDefaultPw();
+            if (cancelled) return;
+            setDocs(d);
+            setCounter(c);
+            setDefaultPw(p);
+            setLoadingDoc(false);
+            setReady(true);
+            if (viewId) setPage("access");
+          } catch(e) {
+            console.error("초기화 오류:", e);
+            if (!cancelled) { setLoadingDoc(false); setReady(true); if (viewId) setPage("access"); }
+          }
         };
-        if (window.DB) { init(); }
-        else { window.addEventListener("firebase-ready", init, {once:true}); }
+        // window.DB가 준비될 때까지 폴링 (최대 10초)
+        let tries = 0;
+        const timer = setInterval(()=>{
+          if (window.__DB_READY__ && window.DB) {
+            clearInterval(timer);
+            init();
+          } else if (++tries > 100) {
+            clearInterval(timer);
+            if (!cancelled) { setLoadingDoc(false); setReady(true); }
+          }
+        }, 100);
+        return ()=>{ cancelled = true; clearInterval(timer); };
       }, []);
 
       const refreshDocs = async () => {
