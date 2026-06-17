@@ -19,6 +19,21 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     .spinner { width:40px; height:40px; border:3px solid rgba(233,30,140,0.2); border-top-color:#e91e8c; border-radius:50%; animation:spin .8s linear infinite; }
   </style>
+  <script>
+    // 전역 에러를 화면에 표시 (흰 화면 진단용)
+    window.addEventListener("error", function(e){
+      var r = document.getElementById("root");
+      if (r) r.innerHTML = '<div style="padding:24px;font-family:sans-serif;color:#c4166e;font-size:13px;line-height:1.6;word-break:break-all;">'
+        + '<b>오류 발생:</b><br>' + (e.message || e.error || "알 수 없는 오류")
+        + '<br><br><span style="color:#8892a4;">' + (e.filename||"") + ' : ' + (e.lineno||"") + '행</span></div>';
+    });
+    window.addEventListener("unhandledrejection", function(e){
+      var r = document.getElementById("root");
+      if (r && r.textContent.indexOf("불러오는") >= 0) r.innerHTML =
+        '<div style="padding:24px;font-family:sans-serif;color:#c4166e;font-size:13px;line-height:1.6;word-break:break-all;">'
+        + '<b>연결 오류:</b><br>' + (e.reason && e.reason.message ? e.reason.message : e.reason) + '</div>';
+    });
+  </script>
 </head>
 <body>
   <div id="root"><div style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:sans-serif;color:#8892a4;font-size:14px;">불러오는 중...</div></div>
@@ -98,11 +113,11 @@
   </script>
 
   <!-- React + Babel -->
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js" crossorigin></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.7/babel.min.js"></script>
 
-  <script type="text/babel" data-presets="react">
+  <script type="text/babel" data-presets="react" data-type="module">
     const { useState, useEffect, useCallback, useRef } = React;
 
     // ── Helpers ────────────────────────────────────────────────────────────────
