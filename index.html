@@ -484,11 +484,146 @@
     }
 
     // ── STATS PAGE ─────────────────────────────────────────────────────────────
+    // ── 문서별 카드 (최신순 5건 + 더보기) ─────────────────────────────────────
+    function DocCard({ doc }) {
+      const [showAll, setShowAll] = useState(false);
+      // 최신순 정렬
+      const sorted = [...doc.docLogs].sort((a,b) => new Date(b.time) - new Date(a.time));
+      const visible = showAll ? sorted : sorted.slice(0, 5);
+      const remain  = sorted.length - 5;
+
+      return (
+        <div style={{ background:"#fff", borderRadius:12, marginBottom:16, overflow:"hidden", boxShadow:"0 2px 12px rgba(26,35,64,0.07)" }}>
+          {/* 헤더 */}
+          <div style={{ background:"linear-gradient(135deg,#1a2340,#2d3a6b)", padding:"16px 20px", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8 }}>
+            <div>
+              <div style={{ color:"#e91e8c", fontSize:11, fontWeight:700, letterSpacing:1 }}>DOCUMENT</div>
+              <div style={{ color:"#fff", fontWeight:700, fontSize:14, marginTop:2 }}>{doc.id}</div>
+            </div>
+            <div style={{ display:"flex", gap:12 }}>
+              <div style={{ textAlign:"center" }}>
+                <div style={{ color:"#e91e8c", fontWeight:800, fontSize:20 }}>{doc.viewCount||0}</div>
+                <div style={{ color:"rgba(255,255,255,0.5)", fontSize:10 }}>열람 횟수</div>
+              </div>
+              <div style={{ textAlign:"center" }}>
+                <div style={{ color:"#e91e8c", fontWeight:800, fontSize:20 }}>{doc.viewers.length}</div>
+                <div style={{ color:"rgba(255,255,255,0.5)", fontSize:10 }}>열람자</div>
+              </div>
+            </div>
+          </div>
+
+          {/* 열람 내역 테이블 */}
+          {doc.docLogs.length > 0 ? (
+            <div style={{ padding:"0 20px 16px" }}>
+              <table style={{ width:"100%", borderCollapse:"collapse", marginTop:16 }}>
+                <thead>
+                  <tr>
+                    {["소속 및 직책","열람 시간"].map(h=>(
+                      <th key={h} style={{ textAlign:"left", color:"#8892a4", fontSize:11, fontWeight:600, padding:"8px 0", borderBottom:"1px solid #eee", letterSpacing:0.5 }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {visible.map((log,i)=>(
+                    <tr key={i} style={{ borderBottom:"1px solid #f5f6f9" }}>
+                      <td style={{ padding:"10px 0", color:"#1a2340", fontWeight:600, fontSize:13 }}>{log.name}</td>
+                      <td style={{ padding:"10px 0", color:"#8892a4", fontSize:12 }}>{new Date(log.time).toLocaleString("ko-KR")}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {/* 더보기 / 접기 버튼 */}
+              {sorted.length > 5 && (
+                <button onClick={()=>setShowAll(!showAll)}
+                  style={{ width:"100%", marginTop:12, padding:"9px 0", background:"rgba(26,35,64,0.05)", border:"1px solid #dde1ea", borderRadius:8, color:"#1a2340", fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"'Sora',sans-serif" }}>
+                  {showAll ? "▲ 접기" : `▼ 더보기 (${remain}건 더 있음)`}
+                </button>
+              )}
+            </div>
+          ) : (
+            <div style={{ padding:"16px 20px", color:"#aab0be", fontSize:13 }}>아직 열람 기록이 없습니다</div>
+          )}
+        </div>
+      );
+    }
+
+    // ── 소속·직책별 카드 ───────────────────────────────────────────────────────
+    function PersonCard({ name, entries }) {
+      const [showAll, setShowAll] = useState(false);
+      const sorted  = [...entries].sort((a,b) => new Date(b.time) - new Date(a.time));
+      const visible = showAll ? sorted : sorted.slice(0, 5);
+      const remain  = sorted.length - 5;
+      return (
+        <div style={{ background:"#fff", borderRadius:12, marginBottom:12, overflow:"hidden", boxShadow:"0 2px 8px rgba(26,35,64,0.06)" }}>
+          <div style={{ background:"linear-gradient(135deg,#2d3a6b,#3d4f8a)", padding:"12px 20px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <div style={{ color:"#fff", fontWeight:700, fontSize:14 }}>{name}</div>
+            <div style={{ background:"rgba(233,30,140,0.25)", color:"#f472b6", fontSize:11, fontWeight:700, padding:"3px 10px", borderRadius:20 }}>
+              총 {entries.length}회 열람
+            </div>
+          </div>
+          <div style={{ padding:"0 20px 12px" }}>
+            <table style={{ width:"100%", borderCollapse:"collapse", marginTop:12 }}>
+              <thead>
+                <tr>
+                  {["문서","열람 시간"].map(h=>(
+                    <th key={h} style={{ textAlign:"left", color:"#8892a4", fontSize:11, fontWeight:600, padding:"6px 0", borderBottom:"1px solid #eee" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((e,i)=>(
+                  <tr key={i} style={{ borderBottom:"1px solid #f5f6f9" }}>
+                    <td style={{ padding:"8px 0", color:"#1a2340", fontSize:12, fontWeight:600 }}>{e.docId}</td>
+                    <td style={{ padding:"8px 0", color:"#8892a4", fontSize:11 }}>{new Date(e.time).toLocaleString("ko-KR")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {sorted.length > 5 && (
+              <button onClick={()=>setShowAll(!showAll)}
+                style={{ width:"100%", marginTop:10, padding:"8px 0", background:"rgba(26,35,64,0.05)", border:"1px solid #dde1ea", borderRadius:8, color:"#1a2340", fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"'Sora',sans-serif" }}>
+                {showAll ? "▲ 접기" : `▼ 더보기 (${remain}건 더 있음)`}
+              </button>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ── STATS PAGE ─────────────────────────────────────────────────────────────
     function StatsPage({ docs, logs, loadingLogs }) {
+      const [statsTab, setStatsTab] = useState("doc"); // "doc" | "person"
+
+      // 문서별 — 최신 열람순으로 문서 정렬
       const docStats = docs.map(doc => {
         const docLogs = logs.filter(l => l.docId === doc.id);
         const viewers = [...new Set(docLogs.map(l => l.name))];
-        return { ...doc, docLogs, viewers };
+        const latest  = docLogs.reduce((m,l) => (!m || l.time > m) ? l.time : m, null);
+        return { ...doc, docLogs, viewers, latest };
+      }).sort((a,b) => {
+        if (!a.latest && !b.latest) return 0;
+        if (!a.latest) return 1;
+        if (!b.latest) return -1;
+        return new Date(b.latest) - new Date(a.latest);
+      });
+
+      // 소속·직책별 — 이름으로 그룹핑, 최근 열람순 정렬
+      const personMap = {};
+      logs.forEach(l => {
+        if (!personMap[l.name]) personMap[l.name] = [];
+        personMap[l.name].push(l);
+      });
+      const personList = Object.entries(personMap)
+        .map(([name, entries]) => ({ name, entries, latest: entries.reduce((m,e)=>e.time>m?e.time:m,"") }))
+        .sort((a,b) => new Date(b.latest) - new Date(a.latest));
+
+      const tabStyle = t => ({
+        flex:1, padding:"10px 0", border:"none", cursor:"pointer",
+        fontFamily:"'Sora',sans-serif", fontWeight: statsTab===t ? 700 : 500,
+        fontSize:13, transition:"all .2s",
+        background: statsTab===t ? "#1a2340" : "transparent",
+        color: statsTab===t ? "#fff" : "#8892a4",
+        borderRadius: statsTab===t ? 8 : 0,
       });
 
       return (
@@ -499,11 +634,12 @@
           </div>
 
           <div style={{ maxWidth:800, margin:"40px auto", padding:"0 16px" }}>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:16, marginBottom:32 }}>
+            {/* 요약 카드 */}
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:16, marginBottom:24 }}>
               {[
-                { label:"전체 공유 문서",       value:docs.length,                           icon:"📄" },
-                { label:"전체 열람 횟수",        value:logs.length,                           icon:"👁" },
-                { label:"열람자 수 (중복제거)",  value:new Set(logs.map(l=>l.name)).size,     icon:"👤" },
+                { label:"전체 공유 문서",      value:docs.length,                        icon:"📄" },
+                { label:"전체 열람 횟수",       value:logs.length,                        icon:"👁" },
+                { label:"열람자 수 (중복제거)", value:new Set(logs.map(l=>l.name)).size,  icon:"👤" },
               ].map((c,i)=>(
                 <div key={i} style={{ background:"#fff", borderRadius:12, padding:20, boxShadow:"0 2px 12px rgba(26,35,64,0.07)", textAlign:"center" }}>
                   <div style={{ fontSize:28, marginBottom:8 }}>{c.icon}</div>
@@ -513,49 +649,28 @@
               ))}
             </div>
 
+            {/* 뷰 전환 탭 */}
+            <div style={{ background:"#fff", borderRadius:10, padding:6, display:"flex", gap:4, marginBottom:20, boxShadow:"0 2px 8px rgba(26,35,64,0.06)" }}>
+              <button style={tabStyle("doc")}    onClick={()=>setStatsTab("doc")}>📄 문서별 내역</button>
+              <button style={tabStyle("person")} onClick={()=>setStatsTab("person")}>👤 소속·직책별 내역</button>
+            </div>
+
             {loadingLogs ? <Loader text="통계 불러오는 중..."/> :
-              docStats.length===0
-                ? <div style={{ background:"#fff", borderRadius:12, padding:40, textAlign:"center", color:"#aab0be" }}>공유된 문서가 없습니다</div>
-                : docStats.map(doc=>(
-                    <div key={doc.id} style={{ background:"#fff", borderRadius:12, marginBottom:16, overflow:"hidden", boxShadow:"0 2px 12px rgba(26,35,64,0.07)" }}>
-                      <div style={{ background:"linear-gradient(135deg,#1a2340,#2d3a6b)", padding:"16px 20px", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8 }}>
-                        <div>
-                          <div style={{ color:"#e91e8c", fontSize:11, fontWeight:700, letterSpacing:1 }}>DOCUMENT</div>
-                          <div style={{ color:"#fff", fontWeight:700, fontSize:14, marginTop:2 }}>{doc.id}</div>
-                        </div>
-                        <div style={{ display:"flex", gap:12 }}>
-                          <div style={{ textAlign:"center" }}>
-                            <div style={{ color:"#e91e8c", fontWeight:800, fontSize:20 }}>{doc.viewCount||0}</div>
-                            <div style={{ color:"rgba(255,255,255,0.5)", fontSize:10 }}>열람 횟수</div>
-                          </div>
-                          <div style={{ textAlign:"center" }}>
-                            <div style={{ color:"#e91e8c", fontWeight:800, fontSize:20 }}>{doc.viewers.length}</div>
-                            <div style={{ color:"rgba(255,255,255,0.5)", fontSize:10 }}>열람자</div>
-                          </div>
-                        </div>
-                      </div>
-                      {doc.docLogs.length>0
-                        ? <div style={{ padding:"0 20px 16px" }}>
-                            <table style={{ width:"100%", borderCollapse:"collapse", marginTop:16 }}>
-                              <thead>
-                                <tr>{["소속 및 직책","열람 시간"].map(h=>(
-                                  <th key={h} style={{ textAlign:"left", color:"#8892a4", fontSize:11, fontWeight:600, padding:"8px 0", borderBottom:"1px solid #eee", letterSpacing:0.5 }}>{h}</th>
-                                ))}</tr>
-                              </thead>
-                              <tbody>
-                                {[...doc.docLogs].reverse().map((log,i)=>(
-                                  <tr key={i} style={{ borderBottom:"1px solid #f5f6f9" }}>
-                                    <td style={{ padding:"10px 0", color:"#1a2340", fontWeight:600, fontSize:13 }}>{log.name}</td>
-                                    <td style={{ padding:"10px 0", color:"#8892a4", fontSize:12 }}>{new Date(log.time).toLocaleString("ko-KR")}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        : <div style={{ padding:"16px 20px", color:"#aab0be", fontSize:13 }}>아직 열람 기록이 없습니다</div>
-                      }
-                    </div>
-                  ))
+              <>
+                {/* 문서별 뷰 */}
+                {statsTab==="doc" && (
+                  docStats.length===0
+                    ? <div style={{ background:"#fff", borderRadius:12, padding:40, textAlign:"center", color:"#aab0be" }}>공유된 문서가 없습니다</div>
+                    : docStats.map(doc => <DocCard key={doc.id} doc={doc}/>)
+                )}
+
+                {/* 소속·직책별 뷰 */}
+                {statsTab==="person" && (
+                  personList.length===0
+                    ? <div style={{ background:"#fff", borderRadius:12, padding:40, textAlign:"center", color:"#aab0be" }}>열람 기록이 없습니다</div>
+                    : personList.map(p => <PersonCard key={p.name} name={p.name} entries={p.entries}/>)
+                )}
+              </>
             }
           </div>
         </div>
