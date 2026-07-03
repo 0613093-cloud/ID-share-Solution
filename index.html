@@ -183,7 +183,7 @@
     // ── ADMIN PAGE ─────────────────────────────────────────────────────────────
     function AdminPage({ docs, counter, setCounter, defaultPw, setDefaultPw, refreshDocs }) {
       const [tab, setTab]             = useState("create");
-      const [form, setForm]           = useState({ url:"", password:"", confirmPw:"", expiryDate:"", expiryHour:"23" });
+      const [form, setForm]           = useState({ docName:"", url:"", password:"", confirmPw:"", expiryDate:"", expiryHour:"23" });
       const [newDefaultPw, setNewDPw] = useState("");
       const [confirmDef, setConfDef]  = useState("");
       const [showDef, setShowDef]     = useState(false);
@@ -195,21 +195,22 @@
 
       const handleCreate = async () => {
         setError("");
-        if (!form.url)                        { setError("문서 URL을 입력해주세요."); return; }
-        if (!form.password)                   { setError("비밀번호를 입력해주세요."); return; }
-        if (form.password !== form.confirmPw) { setError("비밀번호가 일치하지 않습니다."); return; }
-        if (!form.expiryDate)                 { setError("만료 날짜를 설정해주세요."); return; }
+        if (!form.docName.trim())               { setError("문서 이름을 입력해주세요."); return; }
+        if (!form.url)                          { setError("문서 URL을 입력해주세요."); return; }
+        if (!form.password)                     { setError("비밀번호를 입력해주세요."); return; }
+        if (form.password !== form.confirmPw)   { setError("비밀번호가 일치하지 않습니다."); return; }
+        if (!form.expiryDate)                   { setError("만료 날짜를 설정해주세요."); return; }
 
         setSaving(true);
         const linkId    = genLinkId(counter);
         const expiryISO = new Date(`${form.expiryDate}T${String(form.expiryHour).padStart(2,"0")}:00:00`).toISOString();
-        const newDoc    = { id:linkId, url:form.url, password:form.password, expiry:expiryISO, createdAt:new Date().toISOString(), viewCount:0 };
+        const newDoc    = { id:linkId, docName:form.docName.trim(), url:form.url, password:form.password, expiry:expiryISO, createdAt:new Date().toISOString(), viewCount:0 };
 
         await window.DB.saveDoc(newDoc);
         await window.DB.setCounter(counter + 1);
         setCounter(counter + 1);
         setCreated(newDoc);
-        setForm({ url:"", password:"", confirmPw:"", expiryDate:"", expiryHour:"23" });
+        setForm({ docName:"", url:"", password:"", confirmPw:"", expiryDate:"", expiryHour:"23" });
         setSaving(false);
       };
 
@@ -262,7 +263,8 @@
                     <div style={{ background:"linear-gradient(135deg,#1a2340,#2d3a6b)", borderRadius:12, padding:24, marginBottom:28, position:"relative", overflow:"hidden" }}>
                       <div style={{ position:"absolute", right:-20, top:-20, width:120, height:120, borderRadius:"50%", background:"rgba(233,30,140,0.15)" }}/>
                       <div style={{ color:"#e91e8c", fontWeight:700, fontSize:11, letterSpacing:2, marginBottom:8 }}>✓ 링크 생성 완료</div>
-                      <div style={{ color:"#fff", fontWeight:700, fontSize:15, marginBottom:6 }}>{created.id}</div>
+                      <div style={{ color:"#fff", fontWeight:800, fontSize:16, marginBottom:2 }}>{created.docName}</div>
+                      <div style={{ color:"rgba(255,255,255,0.45)", fontSize:11, marginBottom:6 }}>{created.id}</div>
                       <div style={{ background:"rgba(255,255,255,0.1)", borderRadius:8, padding:"10px 14px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, marginTop:12 }}>
                         <span style={{ color:"#c8d0e0", fontSize:11, wordBreak:"break-all", flex:1 }}>{shareLink}</span>
                         <button onClick={()=>{ navigator.clipboard.writeText(shareLink).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),2000); }); }}
@@ -276,6 +278,11 @@
 
                   {error && <div style={{ background:"#fff0f4", border:"1px solid #e91e8c", borderRadius:8, padding:"10px 14px", color:"#c4166e", fontSize:13, marginBottom:20 }}>{error}</div>}
 
+                  <Field label="문서 이름 *">
+                    <input value={form.docName} onChange={e=>setForm({...form,docName:e.target.value})}
+                      placeholder="예: 2605월 마감보고 · Asian Beauty Center"
+                      style={inputStyle}/>
+                  </Field>
                   <Field label="문서 URL (Google Drive 등)">
                     <input value={form.url} onChange={e=>setForm({...form,url:e.target.value})} placeholder="https://drive.google.com/file/d/..." style={inputStyle}/>
                   </Field>
@@ -318,7 +325,10 @@
                               <div style={{ position:"absolute", top:0, left:0, width:4, height:"100%", background:expired?"#aab0be":"#e91e8c" }}/>
                               <div style={{ paddingLeft:8 }}>
                                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", flexWrap:"wrap", gap:8 }}>
-                                  <div style={{ fontWeight:700, fontSize:13, color:"#1a2340" }}>{doc.id}</div>
+                                  <div>
+                                    <div style={{ fontWeight:800, fontSize:14, color:"#1a2340" }}>{doc.docName || doc.id}</div>
+                                    {doc.docName && <div style={{ fontWeight:500, fontSize:11, color:"#aab0be", marginTop:2 }}>{doc.id}</div>}
+                                  </div>
                                   <span style={{ background:expired?"#f0f2f7":"#fff0f8", color:expired?"#8892a4":"#e91e8c", fontSize:10, fontWeight:700, padding:"3px 8px", borderRadius:20, border:`1px solid ${expired?"#dde1ea":"#f9a8d4"}` }}>
                                     {expired?"만료됨 (디폴트 PW)":"활성"}
                                   </span>
@@ -496,9 +506,16 @@
         <div style={{ background:"#fff", borderRadius:12, marginBottom:16, overflow:"hidden", boxShadow:"0 2px 12px rgba(26,35,64,0.07)" }}>
           {/* 헤더 */}
           <div style={{ background:"linear-gradient(135deg,#1a2340,#2d3a6b)", padding:"16px 20px", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8 }}>
-            <div>
-              <div style={{ color:"#e91e8c", fontSize:11, fontWeight:700, letterSpacing:1 }}>DOCUMENT</div>
-              <div style={{ color:"#fff", fontWeight:700, fontSize:14, marginTop:2 }}>{doc.id}</div>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ color:"#e91e8c", fontSize:10, fontWeight:700, letterSpacing:1 }}>DOCUMENT</div>
+              <div style={{ color:"#fff", fontWeight:800, fontSize:15, marginTop:2 }}>{doc.docName || doc.id}</div>
+              {doc.docName && <div style={{ color:"rgba(255,255,255,0.4)", fontSize:10, marginTop:2 }}>{doc.id}</div>}
+              {doc.url && (
+                <button onClick={()=>window.open(doc.url,"_blank")}
+                  style={{ marginTop:8, background:"rgba(233,30,140,0.2)", border:"1px solid rgba(233,30,140,0.4)", color:"#f472b6", borderRadius:6, padding:"4px 12px", fontSize:11, fontWeight:600, cursor:"pointer", fontFamily:"'Sora',sans-serif" }}>
+                  📄 문서 열기 →
+                </button>
+              )}
             </div>
             <div style={{ display:"flex", gap:12 }}>
               <div style={{ textAlign:"center" }}>
@@ -547,12 +564,12 @@
       );
     }
 
-    // ── 소속·직책별 카드 ───────────────────────────────────────────────────────
-    function PersonCard({ name, entries }) {
+    function PersonCard({ name, entries, docs }) {
       const [showAll, setShowAll] = useState(false);
       const sorted  = [...entries].sort((a,b) => new Date(b.time) - new Date(a.time));
       const visible = showAll ? sorted : sorted.slice(0, 5);
       const remain  = sorted.length - 5;
+      const getDoc  = (docId) => docs.find(d => d.id === docId);
       return (
         <div style={{ background:"#fff", borderRadius:12, marginBottom:12, overflow:"hidden", boxShadow:"0 2px 8px rgba(26,35,64,0.06)" }}>
           <div style={{ background:"linear-gradient(135deg,#2d3a6b,#3d4f8a)", padding:"12px 20px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
@@ -571,12 +588,24 @@
                 </tr>
               </thead>
               <tbody>
-                {visible.map((e,i)=>(
-                  <tr key={i} style={{ borderBottom:"1px solid #f5f6f9" }}>
-                    <td style={{ padding:"8px 0", color:"#1a2340", fontSize:12, fontWeight:600 }}>{e.docId}</td>
-                    <td style={{ padding:"8px 0", color:"#8892a4", fontSize:11 }}>{new Date(e.time).toLocaleString("ko-KR")}</td>
-                  </tr>
-                ))}
+                {visible.map((e,i)=>{
+                  const d = getDoc(e.docId);
+                  return (
+                    <tr key={i} style={{ borderBottom:"1px solid #f5f6f9" }}>
+                      <td style={{ padding:"8px 0" }}>
+                        {d?.url
+                          ? <button onClick={()=>window.open(d.url,"_blank")}
+                              style={{ background:"none", border:"none", padding:0, cursor:"pointer", textAlign:"left", fontFamily:"'Sora',sans-serif" }}>
+                              <span style={{ color:"#1a2340", fontSize:12, fontWeight:600 }}>{d.docName || e.docId}</span>
+                              <span style={{ color:"#e91e8c", fontSize:11, marginLeft:4 }}>↗</span>
+                            </button>
+                          : <span style={{ color:"#1a2340", fontSize:12, fontWeight:600 }}>{d?.docName || e.docId}</span>
+                        }
+                      </td>
+                      <td style={{ padding:"8px 0", color:"#8892a4", fontSize:11 }}>{new Date(e.time).toLocaleString("ko-KR")}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
             {sorted.length > 5 && (
@@ -668,7 +697,7 @@
                 {statsTab==="person" && (
                   personList.length===0
                     ? <div style={{ background:"#fff", borderRadius:12, padding:40, textAlign:"center", color:"#aab0be" }}>열람 기록이 없습니다</div>
-                    : personList.map(p => <PersonCard key={p.name} name={p.name} entries={p.entries}/>)
+                    : personList.map(p => <PersonCard key={p.name} name={p.name} entries={p.entries} docs={docs}/>)
                 )}
               </>
             }
