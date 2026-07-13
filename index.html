@@ -281,7 +281,7 @@
         <div style={{ minHeight:"100vh", background:"#f0f2f7", fontFamily:"'Sora',sans-serif", paddingBottom:80 }}>
           <div style={{ background:"#1a2340", padding:"0 32px", display:"flex", alignItems:"center", justifyContent:"space-between", height:64, boxShadow:"0 2px 12px rgba(26,35,64,0.2)" }}>
             <IDHLogo dark />
-            <div style={{ color:"#e91e8c", fontWeight:700, fontSize:13, letterSpacing:2, textTransform:"uppercase" }}>Planning & Coordination · Admin</div>
+            <div style={{ color:"#e91e8c", fontWeight:700, fontSize:13, letterSpacing:2, textTransform:"uppercase" }}>Planning {"&"} Coordination · Admin</div>
           </div>
 
           <div style={{ maxWidth:720, margin:"40px auto", padding:"0 16px" }}>
@@ -618,16 +618,43 @@
 
               {/* ── Step 3: 발송 완료 ── */}
               {step==="sent" && (
-                <div style={{ background:"rgba(255,255,255,0.05)", backdropFilter:"blur(20px)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:16, padding:28, textAlign:"center" }}>
-                  <div style={{ color:"rgba(255,255,255,0.7)", fontSize:14, lineHeight:1.8, marginBottom:24 }}>
-                    <span style={{ color:"#e91e8c", fontWeight:700 }}>{email}</span><br/>
-                    으로 인증 링크를 보냈습니다.<br/>
-                    메일함에서 <span style={{ color:"#e91e8c", fontWeight:700 }}>"문서 열람 인증"</span> 버튼을 클릭하면<br/>
-                    문서가 자동으로 열립니다.
+                <div style={{ background:"rgba(255,255,255,0.05)", backdropFilter:"blur(20px)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:16, padding:28 }}>
+                  <div style={{ textAlign:"center", marginBottom:20 }}>
+                    <div style={{ color:"rgba(255,255,255,0.7)", fontSize:14, lineHeight:1.9 }}>
+                      <span style={{ color:"#e91e8c", fontWeight:700 }}>{email}</span><br/>
+                      으로 인증 링크를 보냈습니다.<br/>
+                      메일함에서 인증 링크를 클릭하시면<br/>
+                      보안 문서가 자동으로 열립니다.
+                    </div>
                   </div>
-                  <div style={{ background:"rgba(255,255,255,0.05)", borderRadius:10, padding:"12px 16px", marginBottom:20 }}>
-                    <div style={{ color:"rgba(255,255,255,0.4)", fontSize:11, marginBottom:4 }}>📌 메일이 안 오면</div>
-                    <div style={{ color:"rgba(255,255,255,0.6)", fontSize:12 }}>스팸함을 확인하거나 아래 버튼으로 재발송하세요</div>
+                  <div style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:10, padding:"16px", marginBottom:12 }}>
+                    <div style={{ color:"#e91e8c", fontSize:11, fontWeight:700, letterSpacing:1, marginBottom:10, textTransform:"uppercase" }}>안내사항</div>
+                    <div style={{ color:"rgba(255,255,255,0.75)", fontSize:12, lineHeight:1.9 }}>
+                      안녕하세요. 아이디병원 기획조정실입니다.<br/>
+                      메일의 인증 링크를 누르시면 보안 문서를 열람하실 수 있습니다.<br/>
+                      본 기능은 설정된 기한 내에만 제공되며,<br/>
+                      기한이 종료될 경우 별도의 비밀번호가 추가로 필요합니다.<br/>
+                      <span style={{ color:"rgba(255,255,255,0.45)", fontSize:11 }}>
+                        문의사항은 사내 내선 <span style={{ color:"#e91e8c", fontWeight:700 }}>559</span>로 연락 바랍니다.
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:"16px", marginBottom:16 }}>
+                    <div style={{ color:"rgba(255,255,255,0.35)", fontSize:11, fontWeight:700, letterSpacing:1, marginBottom:10, textTransform:"uppercase" }}>Notice (English)</div>
+                    <div style={{ color:"rgba(255,255,255,0.5)", fontSize:12, lineHeight:1.9 }}>
+                      Hello, this is the Planning {"&"} Coordination Department of ID Hospital.<br/>
+                      Please click the verification link in the email to access the secure document.<br/>
+                      Access is available only within the designated period.<br/>
+                      After the deadline, an additional password will be required.<br/>
+                      <span style={{ color:"rgba(255,255,255,0.35)", fontSize:11 }}>
+                        For inquiries, please contact us at internal extension <span style={{ color:"rgba(233,30,140,0.7)", fontWeight:700 }}>559</span>.
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ background:"rgba(255,255,255,0.04)", borderRadius:8, padding:"10px 14px", marginBottom:14, textAlign:"center" }}>
+                    <div style={{ color:"rgba(255,255,255,0.4)", fontSize:11 }}>
+                      {"📌"} 메일이 보이지 않으면 <span style={{ color:"#f472b6" }}>스팸메일함</span>을 확인해주세요
+                    </div>
                   </div>
                   <button onClick={()=>{ setStep(expired?"pwcheck":"input"); setError(""); setPwInput(""); }}
                     style={{ width:"100%", background:"transparent", border:"1px solid rgba(255,255,255,0.2)", color:"rgba(255,255,255,0.6)", borderRadius:10, padding:"12px 0", fontWeight:600, fontSize:13, cursor:"pointer", fontFamily:"'Sora',sans-serif" }}>
@@ -639,7 +666,7 @@
           </div>
 
           <div style={{ padding:"20px 32px", textAlign:"center", borderTop:"1px solid rgba(255,255,255,0.06)" }}>
-            <div style={{ color:"rgba(255,255,255,0.5)", fontSize:11, letterSpacing:1.5, textTransform:"uppercase", lineHeight:1.8 }}>IDH · Planning & Coordination Dept.</div>
+            <div style={{ color:"rgba(255,255,255,0.5)", fontSize:11, letterSpacing:1.5, textTransform:"uppercase", lineHeight:1.8 }}>IDH · Planning {"&"} Coordination Dept.</div>
             <div style={{ color:"rgba(255,255,255,0.25)", fontSize:10, marginTop:4 }}>ID Hospital · 서울시 강남구 도산대로 142</div>
           </div>
         </div>
@@ -837,7 +864,7 @@
 
           {/* 푸터 */}
           <div style={{ padding:"20px 32px", textAlign:"center", borderTop:"1px solid rgba(255,255,255,0.06)" }}>
-            <div style={{ color:"rgba(255,255,255,0.5)", fontSize:11, letterSpacing:1.5, textTransform:"uppercase", lineHeight:1.8 }}>IDH · Planning & Coordination Dept.</div>
+            <div style={{ color:"rgba(255,255,255,0.5)", fontSize:11, letterSpacing:1.5, textTransform:"uppercase", lineHeight:1.8 }}>IDH · Planning {"&"} Coordination Dept.</div>
             <div style={{ color:"rgba(255,255,255,0.25)", fontSize:10, marginTop:4 }}>ID Hospital · 서울시 강남구 도산대로 142</div>
           </div>
         </div>
