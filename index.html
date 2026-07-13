@@ -65,16 +65,20 @@
     // ── Auth helpers ────────────────────────────────────────────────────────────
     window.AUTH = {
       // @idhospital.com 메일로 인증 링크 발송
-      async sendLink(email, redirectUrl) {
+      async sendLink(email, docId) {
         if (!email.toLowerCase().endsWith("@idhospital.com")) {
           throw new Error("@idhospital.com 사내 메일만 사용 가능합니다.");
         }
+        // view 파라미터를 redirectUrl에 포함
+        const base = window.location.origin + window.location.pathname;
+        const redirectUrl = docId ? `${base}?view=${docId}` : base;
         const actionCodeSettings = {
           url: redirectUrl,
           handleCodeInApp: true,
         };
         await sendSignInLinkToEmail(auth, email, actionCodeSettings);
         localStorage.setItem("emailForSignIn", email);
+        if (docId) localStorage.setItem("docIdForSignIn", docId);
       },
       // 메일 링크로 돌아왔을 때 자동 로그인
       async handleEmailLink() {
@@ -84,12 +88,14 @@
         if (!email) return null;
         const result = await signInWithEmailLink(auth, email, window.location.href);
         localStorage.removeItem("emailForSignIn");
-        // URL 정리 (인증 파라미터 제거, view 파라미터 유지)
-        const params = new URLSearchParams(window.location.search);
-        const viewId = params.get("view");
-        const clean  = window.location.pathname + (viewId ? `?view=${viewId}` : "");
+        // view 파라미터 복구 (URL에 없을 경우 localStorage에서)
+        const params  = new URLSearchParams(window.location.search);
+        let   viewId  = params.get("view") || localStorage.getItem("docIdForSignIn");
+        localStorage.removeItem("docIdForSignIn");
+        // URL을 깔끔하게 정리
+        const clean = window.location.pathname + (viewId ? `?view=${viewId}` : "");
         window.history.replaceState(null, "", clean);
-        return result.user;
+        return { user: result.user, viewId };
       },
       // 현재 로그인 상태 구독
       onAuthChange(cb) {
@@ -221,7 +227,7 @@
     // ── ADMIN PAGE ─────────────────────────────────────────────────────────────
     function AdminPage({ docs, counter, setCounter, defaultPw, setDefaultPw, refreshDocs }) {
       const [tab, setTab]             = useState("create");
-      const [form, setForm]           = useState({ docName:"", url:"", password:"", confirmPw:"", expiryDate:"", expiryHour:"23" });
+      const [form, setForm]           = useState({ docName:"", url:"", expiryDate:"", expiryHour:"23" });
       const [newDefaultPw, setNewDPw] = useState("");
       const [confirmDef, setConfDef]  = useState("");
       const [showDef, setShowDef]     = useState(false);
@@ -233,22 +239,20 @@
 
       const handleCreate = async () => {
         setError("");
-        if (!form.docName.trim())               { setError("문서 이름을 입력해주세요."); return; }
-        if (!form.url)                          { setError("문서 URL을 입력해주세요."); return; }
-        if (!form.password)                     { setError("비밀번호를 입력해주세요."); return; }
-        if (form.password !== form.confirmPw)   { setError("비밀번호가 일치하지 않습니다."); return; }
-        if (!form.expiryDate)                   { setError("만료 날짜를 설정해주세요."); return; }
+        if (!form.docName.trim()) { setError("문서 이름을 입력해주세요."); return; }
+        if (!form.url)            { setError("문서 URL을 입력해주세요."); return; }
+        if (!form.expiryDate)     { setError("열람 마감 기한을 설정해주세요."); return; }
 
         setSaving(true);
         const linkId    = genLinkId(counter);
         const expiryISO = new Date(`${form.expiryDate}T${String(form.expiryHour).padStart(2,"0")}:00:00`).toISOString();
-        const newDoc    = { id:linkId, docName:form.docName.trim(), url:form.url, password:form.password, expiry:expiryISO, createdAt:new Date().toISOString(), viewCount:0 };
+        const newDoc    = { id:linkId, docName:form.docName.trim(), url:form.url, expiry:expiryISO, createdAt:new Date().toISOString(), viewCount:0 };
 
         await window.DB.saveDoc(newDoc);
         await window.DB.setCounter(counter + 1);
         setCounter(counter + 1);
         setCreated(newDoc);
-        setForm({ docName:"", url:"", password:"", confirmPw:"", expiryDate:"", expiryHour:"23" });
+        setForm({ docName:"", url:"", expiryDate:"", expiryHour:"23" });
         setSaving(false);
       };
 
@@ -324,24 +328,28 @@
                   <Field label="문서 URL (Google Drive 등)">
                     <input value={form.url} onChange={e=>setForm({...form,url:e.target.value})} placeholder="https://drive.google.com/file/d/..." style={inputStyle}/>
                   </Field>
-                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
-                    <Field label="비밀번호 설정">
-                      <input type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder="비밀번호 입력" style={inputStyle}/>
-                    </Field>
-                    <Field label="비밀번호 확인">
-                      <input type="password" value={form.confirmPw} onChange={e=>setForm({...form,confirmPw:e.target.value})} placeholder="비밀번호 재입력"
-                        style={{...inputStyle, borderColor:form.confirmPw&&form.confirmPw!==form.password?"#e91e8c":"#dde1ea"}}/>
-                    </Field>
-                  </div>
-                  <Field label="비밀번호 만료 설정">
+                  <Field label="열람 마감 기한">
                     <div style={{ display:"flex", gap:10 }}>
                       <input type="date" value={form.expiryDate} onChange={e=>setForm({...form,expiryDate:e.target.value})} style={{...inputStyle,flex:1}}/>
                       <select value={form.expiryHour} onChange={e=>setForm({...form,expiryHour:e.target.value})} style={{...inputStyle,width:110}}>
                         {Array.from({length:24},(_,i)=><option key={i} value={i}>{String(i).padStart(2,"0")}:00</option>)}
                       </select>
                     </div>
-                    <p style={{ color:"#aab0be", fontSize:11, margin:"6px 0 0" }}>만료 후 디폴트 비밀번호로 자동 전환됩니다</p>
                   </Field>
+                  {/* 인증 방식 안내 */}
+                  <div style={{ background:"#f8f9fc", border:"1px solid #dde1ea", borderRadius:10, padding:"14px 16px", marginBottom:20 }}>
+                    <div style={{ fontSize:12, color:"#1a2340", fontWeight:700, marginBottom:8 }}>📋 열람 인증 방식</div>
+                    <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                      <div style={{ display:"flex", alignItems:"flex-start", gap:8 }}>
+                        <span style={{ background:"#e91e8c", color:"#fff", fontSize:10, fontWeight:700, padding:"2px 7px", borderRadius:20, whiteSpace:"nowrap", marginTop:1 }}>마감 전</span>
+                        <span style={{ fontSize:12, color:"#4a5568", lineHeight:1.5 }}>@idhospital.com 사내 메일 인증만으로 열람 가능</span>
+                      </div>
+                      <div style={{ display:"flex", alignItems:"flex-start", gap:8 }}>
+                        <span style={{ background:"#8892a4", color:"#fff", fontSize:10, fontWeight:700, padding:"2px 7px", borderRadius:20, whiteSpace:"nowrap", marginTop:1 }}>마감 후</span>
+                        <span style={{ fontSize:12, color:"#4a5568", lineHeight:1.5 }}>디폴트 비밀번호 + 사내 메일 인증 모두 필요</span>
+                      </div>
+                    </div>
+                  </div>
                   <button onClick={handleCreate} disabled={saving}
                     style={{ width:"100%", background: saving?"#aab0be":"linear-gradient(135deg,#e91e8c,#c4166e)", color:"#fff", border:"none", borderRadius:10, padding:"14px 0", fontWeight:800, fontSize:15, cursor: saving?"not-allowed":"pointer", letterSpacing:0.5, boxShadow:"0 4px 16px rgba(233,30,140,0.35)", marginTop:8, fontFamily:"'Sora',sans-serif" }}>
                     {saving ? "저장 중..." : "설정 완료 · 공유 링크 생성"}
@@ -356,8 +364,7 @@
                     ? <div style={{ textAlign:"center", color:"#aab0be", padding:"40px 0", fontSize:14 }}>생성된 링크가 없습니다</div>
                     : <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
                         {[...docs].sort((a,b)=>b.createdAt?.localeCompare(a.createdAt||"")||0).map(doc => {
-                          const expired  = new Date(doc.expiry) < new Date();
-                          const activePw = expired ? defaultPw : doc.password;
+                          const expired = new Date(doc.expiry) < new Date();
                           return (
                             <div key={doc.id} style={{ border:"1px solid #dde1ea", borderRadius:10, padding:16, position:"relative", overflow:"hidden" }}>
                               <div style={{ position:"absolute", top:0, left:0, width:4, height:"100%", background:expired?"#aab0be":"#e91e8c" }}/>
@@ -368,13 +375,12 @@
                                     {doc.docName && <div style={{ fontWeight:500, fontSize:11, color:"#aab0be", marginTop:2 }}>{doc.id}</div>}
                                   </div>
                                   <span style={{ background:expired?"#f0f2f7":"#fff0f8", color:expired?"#8892a4":"#e91e8c", fontSize:10, fontWeight:700, padding:"3px 8px", borderRadius:20, border:`1px solid ${expired?"#dde1ea":"#f9a8d4"}` }}>
-                                    {expired?"만료됨 (디폴트 PW)":"활성"}
+                                    {expired ? "마감 (비번+이메일 인증)" : "열람 가능 (이메일 인증)"}
                                   </span>
                                 </div>
                                 <div style={{ color:"#8892a4", fontSize:11, marginTop:4, wordBreak:"break-all" }}>{doc.url?.length>60?doc.url.slice(0,60)+"...":doc.url}</div>
                                 <div style={{ display:"flex", gap:16, marginTop:8, flexWrap:"wrap" }}>
-                                  <InfoChip label="만료" value={new Date(doc.expiry).toLocaleString("ko-KR")}/>
-                                  <InfoChip label="현재 PW" value={activePw}/>
+                                  <InfoChip label="마감" value={new Date(doc.expiry).toLocaleString("ko-KR")}/>
                                   <InfoChip label="조회" value={`${doc.viewCount||0}회`}/>
                                 </div>
                                 <div style={{ display:"flex", gap:8, marginTop:12 }}>
@@ -426,10 +432,221 @@
     }
 
     // ── EMAIL VERIFY PAGE ──────────────────────────────────────────────────────
-    function PasswordPage({ docId, docs, onSuccess, loading }) {
+    function PasswordPage({ docId, docs, defaultPw, onSuccess, loading }) {
+      const [step,    setStep]    = useState("input");  // input | pwcheck | sent | verifying | error
+      const [email,   setEmail]   = useState("");
+      const [pwInput, setPwInput] = useState("");
+      const [error,   setError]   = useState("");
+      const [sending, setSending] = useState(false);
+      const [shake,   setShake]   = useState(false);
+
+      const doc     = docs.find(d => d.id === docId);
+      const expired = doc ? new Date(doc.expiry) < new Date() : false;
+
+      // 페이지 로드 시 — 메일 링크로 돌아온 경우 자동 처리
+      useEffect(() => {
+        const isEmailLink = window.location.href.includes("oobCode");
+        if (!isEmailLink) { setStep(expired ? "pwcheck" : "input"); return; }
+
+        const run = async () => {
+          setStep("verifying");
+          try {
+            let tries = 0;
+            while (!window.AUTH && tries++ < 50) await new Promise(r=>setTimeout(r,100));
+            if (!window.AUTH) throw new Error("인증 시스템을 불러오지 못했습니다.");
+
+            const result = await window.AUTH.handleEmailLink();
+            if (!result) { setStep("input"); return; }
+
+            const { user, viewId: resolvedId } = result;
+            const targetId = resolvedId || docId;
+
+            let targetDoc = docs.find(d => d.id === targetId);
+            if (!targetDoc && targetId) {
+              const allDocs = await window.DB.getDocs();
+              targetDoc = allDocs.find(d => d.id === targetId);
+            }
+            if (!targetDoc) { setError("문서를 찾을 수 없습니다."); setStep("error"); return; }
+
+            await window.DB.addLog({ docId:targetDoc.id, name:user.email, time:new Date().toISOString(), linkId:targetDoc.id });
+            await window.DB.incViewCount(targetDoc.id);
+            onSuccess(targetDoc.url);
+          } catch(e) {
+            console.error(e);
+            setError(e.message || "인증에 실패했습니다. 다시 시도해주세요.");
+            setStep("error");
+          }
+        };
+        run();
+      }, []);
+
+      const triggerShake = () => { setShake(true); setTimeout(()=>setShake(false),500); };
+
+      // 마감 후: 디폴트 비밀번호 확인
+      const handlePwCheck = () => {
+        setError("");
+        if (!pwInput) { setError("비밀번호를 입력해주세요."); triggerShake(); return; }
+        if (pwInput !== defaultPw) { setError("비밀번호가 올바르지 않습니다."); triggerShake(); setPwInput(""); return; }
+        setStep("input"); // 비번 확인 후 이메일 인증으로
+      };
+
+      // 이메일 인증 링크 발송
+      const handleSend = async () => {
+        setError("");
+        if (!email.trim()) { setError("이메일을 입력해주세요."); triggerShake(); return; }
+        if (!email.toLowerCase().endsWith("@idhospital.com")) {
+          setError("@idhospital.com 사내 메일만 사용 가능합니다."); triggerShake(); return;
+        }
+        if (!doc) { setError("존재하지 않는 문서입니다."); return; }
+        setSending(true);
+        try {
+          await window.AUTH.sendLink(email.trim().toLowerCase(), docId);
+          setStep("sent");
+        } catch(e) {
+          setError(e.message || "메일 발송에 실패했습니다."); triggerShake();
+        }
+        setSending(false);
+      };
+
+      const pageInput = {
+        width:"100%", background:"rgba(255,255,255,0.07)",
+        border:"1px solid rgba(255,255,255,0.15)", borderRadius:10,
+        padding:"12px 14px", color:"#fff", fontSize:15,
+        outline:"none", boxSizing:"border-box", fontFamily:"'Sora',sans-serif", transition:"border-color .2s"
+      };
+
+      if (loading || step === "verifying") return (
+        <div style={{ minHeight:"100vh", background:"linear-gradient(160deg,#0d1526 0%,#1a2340 50%,#0d1526 100%)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:16 }}>
+          <div className="spinner"/>
+          <div style={{ color:"rgba(255,255,255,0.5)", fontSize:13, fontFamily:"'Sora',sans-serif" }}>
+            {step==="verifying" ? "이메일 인증 확인 중..." : "불러오는 중..."}
+          </div>
+        </div>
+      );
+
+      return (
+        <div style={{ minHeight:"100vh", background:"linear-gradient(160deg,#0d1526 0%,#1a2340 50%,#0d1526 100%)", display:"flex", flexDirection:"column", fontFamily:"'Sora',sans-serif", position:"relative", overflow:"hidden" }}>
+          <div style={{ position:"absolute", top:-120, right:-120, width:400, height:400, borderRadius:"50%", background:"radial-gradient(circle,rgba(233,30,140,0.12) 0%,transparent 70%)" }}/>
+          <div style={{ position:"absolute", bottom:-80, left:-80, width:300, height:300, borderRadius:"50%", background:"radial-gradient(circle,rgba(233,30,140,0.08) 0%,transparent 70%)" }}/>
+
+          <div style={{ padding:"20px 32px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <IDHLogo dark />
+            <div style={{ color:"rgba(255,255,255,0.3)", fontSize:10, letterSpacing:2, textTransform:"uppercase" }}>Secure Document Access</div>
+          </div>
+
+          <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", padding:"20px 16px" }}>
+            <div style={{ width:"100%", maxWidth:420 }}>
+
+              {/* 아이콘 + 타이틀 */}
+              <div style={{ textAlign:"center", marginBottom:32 }}>
+                <div style={{ width:72, height:72, background: step==="pwcheck" ? "linear-gradient(135deg,#8892a4,#4a5568)" : "linear-gradient(135deg,#e91e8c,#c4166e)", borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px", boxShadow:"0 8px 32px rgba(233,30,140,0.4)" }}>
+                  {step==="sent"
+                    ? <svg width="32" height="32" viewBox="0 0 24 24" fill="none"><path d="M3 8l9 6 9-6M5 6h14a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2z" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
+                    : step==="pwcheck"
+                    ? <svg width="32" height="32" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="10" rx="2" fill="white"/><path d="M8 11V7a4 4 0 018 0v4" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
+                    : <svg width="32" height="32" viewBox="0 0 24 24" fill="none"><path d="M3 8l9 6 9-6M5 6h14a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2z" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
+                  }
+                </div>
+                <h2 style={{ color:"#fff", fontSize:22, fontWeight:800, margin:0, letterSpacing:-0.5 }}>
+                  {step==="pwcheck" ? "열람 기한 만료" : step==="sent" ? "메일을 확인해주세요" : "보안 문서 접근"}
+                </h2>
+                {doc && <div style={{ color:"#e91e8c", fontSize:12, marginTop:8, fontWeight:700 }}>{doc.docName || doc.id}</div>}
+                <p style={{ color:"rgba(255,255,255,0.45)", fontSize:13, marginTop:6 }}>
+                  {step==="pwcheck" ? "관리자에게 받은 비밀번호를 입력해주세요"
+                    : step==="sent" ? `${email} 으로 인증 링크를 발송했습니다`
+                    : "사내 이메일로 인증 링크를 받아 문서를 열람하세요"}
+                </p>
+              </div>
+
+              <style>{`@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-6px)}80%{transform:translateX(6px)}}`}</style>
+
+              {/* ── Step 1: 마감 후 비밀번호 확인 ── */}
+              {step==="pwcheck" && (
+                <div style={{ animation:shake?"shake 0.4s":"none" }}>
+                  {error && <div style={{ background:"rgba(233,30,140,0.15)", border:"1px solid rgba(233,30,140,0.4)", borderRadius:10, padding:"12px 16px", color:"#f472b6", fontSize:13, marginBottom:16, textAlign:"center" }}>{error}</div>}
+                  <div style={{ background:"rgba(255,255,255,0.05)", backdropFilter:"blur(20px)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:16, padding:28 }}>
+                    <div style={{ background:"rgba(255,255,255,0.05)", borderRadius:8, padding:"10px 14px", marginBottom:20, textAlign:"center" }}>
+                      <div style={{ color:"rgba(255,255,255,0.4)", fontSize:11 }}>열람 마감일</div>
+                      <div style={{ color:"#f472b6", fontSize:13, fontWeight:600, marginTop:2 }}>{doc ? new Date(doc.expiry).toLocaleString("ko-KR") : ""}</div>
+                    </div>
+                    <div style={{ marginBottom:20 }}>
+                      <label style={{ color:"rgba(255,255,255,0.6)", fontSize:11, letterSpacing:1, display:"block", marginBottom:8, textTransform:"uppercase" }}>비밀번호</label>
+                      <input type="password" value={pwInput} onChange={e=>setPwInput(e.target.value)}
+                        placeholder="관리자 비밀번호 입력"
+                        onKeyDown={e=>e.key==="Enter"&&handlePwCheck()}
+                        style={{...pageInput, letterSpacing:4}}
+                        onFocus={e=>e.target.style.borderColor="#e91e8c"}
+                        onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.15)"}/>
+                    </div>
+                    <button onClick={handlePwCheck}
+                      style={{ width:"100%", background:"linear-gradient(135deg,#e91e8c,#c4166e)", color:"#fff", border:"none", borderRadius:10, padding:"14px 0", fontWeight:800, fontSize:15, cursor:"pointer", boxShadow:"0 4px 20px rgba(233,30,140,0.4)", fontFamily:"'Sora',sans-serif" }}>
+                      확인 →
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Step 2: 이메일 입력 ── */}
+              {(step==="input" || step==="error") && (
+                <div style={{ animation:shake?"shake 0.4s":"none" }}>
+                  {error && <div style={{ background:"rgba(233,30,140,0.15)", border:"1px solid rgba(233,30,140,0.4)", borderRadius:10, padding:"12px 16px", color:"#f472b6", fontSize:13, marginBottom:16, textAlign:"center" }}>{error}</div>}
+                  <div style={{ background:"rgba(255,255,255,0.05)", backdropFilter:"blur(20px)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:16, padding:28 }}>
+                    <div style={{ marginBottom:20 }}>
+                      <label style={{ color:"rgba(255,255,255,0.6)", fontSize:11, letterSpacing:1, display:"block", marginBottom:8, textTransform:"uppercase" }}>사내 이메일</label>
+                      <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
+                        placeholder="example@idhospital.com"
+                        onKeyDown={e=>e.key==="Enter"&&handleSend()}
+                        style={pageInput}
+                        onFocus={e=>e.target.style.borderColor="#e91e8c"}
+                        onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.15)"}/>
+                      <div style={{ color:"rgba(255,255,255,0.3)", fontSize:11, marginTop:6 }}>@idhospital.com 사내 메일만 인증 가능합니다</div>
+                    </div>
+                    <button onClick={handleSend} disabled={sending}
+                      style={{ width:"100%", background:sending?"#aab0be":"linear-gradient(135deg,#e91e8c,#c4166e)", color:"#fff", border:"none", borderRadius:10, padding:"14px 0", fontWeight:800, fontSize:15, cursor:sending?"not-allowed":"pointer", boxShadow:"0 4px 20px rgba(233,30,140,0.4)", fontFamily:"'Sora',sans-serif", letterSpacing:0.5 }}>
+                      {sending ? "발송 중..." : "인증 메일 받기 →"}
+                    </button>
+                    <div style={{ marginTop:14, background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:"12px 14px" }}>
+                      <div style={{ color:"rgba(255,255,255,0.55)", fontSize:12, lineHeight:1.7, textAlign:"center" }}>
+                        📬 메일 주소 입력 후 발송 버튼을 누르면<br/>
+                        <span style={{ color:"#e91e8c", fontWeight:600 }}>사내 메일함을 확인</span>해주세요.<br/>
+                        <span style={{ color:"rgba(255,255,255,0.35)", fontSize:11 }}>메일이 보이지 않을 경우 <span style={{ color:"#f472b6" }}>스팸메일함</span>을 확인해주세요.</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Step 3: 발송 완료 ── */}
+              {step==="sent" && (
+                <div style={{ background:"rgba(255,255,255,0.05)", backdropFilter:"blur(20px)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:16, padding:28, textAlign:"center" }}>
+                  <div style={{ color:"rgba(255,255,255,0.7)", fontSize:14, lineHeight:1.8, marginBottom:24 }}>
+                    <span style={{ color:"#e91e8c", fontWeight:700 }}>{email}</span><br/>
+                    으로 인증 링크를 보냈습니다.<br/>
+                    메일함에서 <span style={{ color:"#e91e8c", fontWeight:700 }}>"문서 열람 인증"</span> 버튼을 클릭하면<br/>
+                    문서가 자동으로 열립니다.
+                  </div>
+                  <div style={{ background:"rgba(255,255,255,0.05)", borderRadius:10, padding:"12px 16px", marginBottom:20 }}>
+                    <div style={{ color:"rgba(255,255,255,0.4)", fontSize:11, marginBottom:4 }}>📌 메일이 안 오면</div>
+                    <div style={{ color:"rgba(255,255,255,0.6)", fontSize:12 }}>스팸함을 확인하거나 아래 버튼으로 재발송하세요</div>
+                  </div>
+                  <button onClick={()=>{ setStep(expired?"pwcheck":"input"); setError(""); setPwInput(""); }}
+                    style={{ width:"100%", background:"transparent", border:"1px solid rgba(255,255,255,0.2)", color:"rgba(255,255,255,0.6)", borderRadius:10, padding:"12px 0", fontWeight:600, fontSize:13, cursor:"pointer", fontFamily:"'Sora',sans-serif" }}>
+                    다시 시도하기
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ padding:"20px 32px", textAlign:"center", borderTop:"1px solid rgba(255,255,255,0.06)" }}>
+            <div style={{ color:"rgba(255,255,255,0.5)", fontSize:11, letterSpacing:1.5, textTransform:"uppercase", lineHeight:1.8 }}>IDH · Planning & Coordination Dept.</div>
+            <div style={{ color:"rgba(255,255,255,0.25)", fontSize:10, marginTop:4 }}>ID Hospital · 서울시 강남구 도산대로 142</div>
+          </div>
+        </div>
+      );
+    }
       const [step,     setStep]     = useState("input");  // input | sent | verifying | error
       const [email,    setEmail]    = useState("");
-      const [dept,     setDept]     = useState("");
       const [error,    setError]    = useState("");
       const [sending,  setSending]  = useState(false);
       const [shake,    setShake]    = useState(false);
@@ -438,34 +655,56 @@
 
       // 페이지 로드 시 — 메일 링크로 돌아온 경우 자동 처리
       useEffect(() => {
-        if (!window.AUTH) return;
+        const isEmailLink = window.location.href.includes("oobCode");
+        if (!isEmailLink) { setStep("input"); return; }
+
         const run = async () => {
+          setStep("verifying");
           try {
-            setStep("verifying");
-            const user = await window.AUTH.handleEmailLink();
-            if (!user) { setStep("input"); return; }
-            // 인증 성공 → 로그 기록 후 문서 열기
-            if (doc) {
-              await window.DB.addLog({
-                docId, name: user.email, time: new Date().toISOString(), linkId: doc.id
-              });
-              await window.DB.incViewCount(docId);
-              onSuccess(doc.url);
-            } else {
-              setStep("input");
+            // AUTH가 준비될 때까지 대기
+            let tries = 0;
+            while (!window.AUTH && tries++ < 50) {
+              await new Promise(r => setTimeout(r, 100));
             }
+            if (!window.AUTH) throw new Error("인증 시스템을 불러오지 못했습니다.");
+
+            const result = await window.AUTH.handleEmailLink();
+            if (!result) { setStep("input"); return; }
+
+            const { user, viewId: resolvedId } = result;
+            const targetId = resolvedId || docId;
+
+            // DB에서 문서 직접 조회 (docs 로딩 타이밍 문제 방지)
+            let targetDoc = docs.find(d => d.id === targetId);
+            if (!targetDoc && targetId) {
+              const allDocs = await window.DB.getDocs();
+              targetDoc = allDocs.find(d => d.id === targetId);
+            }
+
+            if (!targetDoc) {
+              setError("문서를 찾을 수 없습니다. 링크를 다시 확인해주세요.");
+              setStep("error");
+              return;
+            }
+
+            // 로그 기록 & 조회수 증가
+            await window.DB.addLog({
+              docId: targetDoc.id,
+              name: user.email,
+              time: new Date().toISOString(),
+              linkId: targetDoc.id
+            });
+            await window.DB.incViewCount(targetDoc.id);
+            onSuccess(targetDoc.url);
+
           } catch(e) {
+            console.error(e);
             setError(e.message || "인증에 실패했습니다. 다시 시도해주세요.");
             setStep("error");
           }
         };
-        // 현재 URL이 이메일 링크인지 확인
-        if (window.location.href.includes("apiKey") || window.location.href.includes("oobCode")) {
-          run();
-        } else {
-          setStep("input");
-        }
-      }, [doc]);
+        run();
+      }, []); // 최초 1회만 실행
 
       const handleSend = async () => {
         setError("");
@@ -477,8 +716,7 @@
 
         setSending(true);
         try {
-          const redirectUrl = window.location.href;
-          await window.AUTH.sendLink(email.trim().toLowerCase(), redirectUrl);
+          await window.AUTH.sendLink(email.trim().toLowerCase(), docId);
           setStep("sent");
         } catch(e) {
           setError(e.message || "메일 발송에 실패했습니다.");
@@ -910,7 +1148,7 @@
           )}
           {page==="stats" && <StatsPage docs={docs} logs={logs} loadingLogs={loadingLog}/>}
           {page==="access" && (
-            <PasswordPage docId={viewId} docs={docs} onSuccess={handleAccessSuccess} loading={loadingDoc}/>
+            <PasswordPage docId={viewId} docs={docs} defaultPw={defaultPw} onSuccess={handleAccessSuccess} loading={loadingDoc}/>
           )}
           {(page==="admin"||page==="stats") && <NavBar page={page} setPage={setPage}/>}
         </>
