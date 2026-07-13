@@ -564,6 +564,13 @@
                       style={{ width:"100%", background:sending?"#aab0be":"linear-gradient(135deg,#e91e8c,#c4166e)", color:"#fff", border:"none", borderRadius:10, padding:"14px 0", fontWeight:800, fontSize:15, cursor:sending?"not-allowed":"pointer", boxShadow:"0 4px 20px rgba(233,30,140,0.4)", fontFamily:"'Sora',sans-serif", letterSpacing:0.5 }}>
                       {sending ? "발송 중..." : "인증 메일 받기 →"}
                     </button>
+                    <div style={{ marginTop:14, background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:"12px 14px" }}>
+                      <div style={{ color:"rgba(255,255,255,0.55)", fontSize:12, lineHeight:1.7, textAlign:"center" }}>
+                        📬 메일 주소 입력 후 발송 버튼을 누르면<br/>
+                        <span style={{ color:"#e91e8c", fontWeight:600 }}>사내 메일함을 확인</span>해주세요.<br/>
+                        <span style={{ color:"rgba(255,255,255,0.35)", fontSize:11 }}>메일이 보이지 않을 경우 <span style={{ color:"#f472b6" }}>스팸메일함</span>을 확인해주세요.</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
