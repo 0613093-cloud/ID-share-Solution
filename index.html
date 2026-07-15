@@ -84,7 +84,13 @@
       async handleEmailLink() {
         if (!isSignInWithEmailLink(auth, window.location.href)) return null;
         let email = localStorage.getItem("emailForSignIn");
-        if (!email) email = window.prompt("인증에 사용한 이메일을 입력해주세요. (예: hong@idhospital.com)");
+        if (!email) {
+          let local = window.prompt("인증에 사용한 이메일 아이디를 입력해주세요.\n(@idhospital.com은 자동으로 붙습니다)");
+          if (local) {
+            local = local.trim().toLowerCase().replace(/@.*$/, "");
+            if (local) email = local + "@idhospital.com";
+          }
+        }
         if (!email) return null;
 
         // view 파라미터 미리 확보
