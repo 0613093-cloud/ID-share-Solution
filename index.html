@@ -448,9 +448,47 @@
       const doc     = docs.find(d => d.id === docId);
       const expired = doc ? new Date(doc.expiry) < new Date() : false;
 
-      // 페이지 로드 시 — 메일 링크로 돌아온 경우 자동 처리
+      // 당일 24:00까지 유효한 인증 패스
+      const getDayPass = (id) => {
+        try {
+          const raw = localStorage.getItem(`idh_pass_${id}`);
+          if (!raw) return null;
+          const p = JSON.parse(raw);
+          if (Date.now() < p.until) return p;
+          localStorage.removeItem(`idh_pass_${id}`);
+          return null;
+        } catch { return null; }
+      };
+      const saveDayPass = (id, userEmail) => {
+        const until = new Date(); until.setHours(24,0,0,0); // 당일 24:00
+        try { localStorage.setItem(`idh_pass_${id}`, JSON.stringify({ email:userEmail, until:until.getTime() })); } catch {}
+      };
+
+      // 페이지 로드 시 — 메일 링크 처리 또는 당일 패스 확인
       useEffect(() => {
         const isEmailLink = window.location.href.includes("oobCode");
+
+        // 당일 패스가 있으면 인증 없이 바로 열기
+        if (!isEmailLink && docId) {
+          const pass = getDayPass(docId);
+          if (pass) {
+            setStep("verifying");
+            const openNow = async () => {
+              try {
+                let tries = 0;
+                while (!window.DB && tries++ < 50) await new Promise(r=>setTimeout(r,100));
+                const targetDoc = docs.find(d => d.id === docId) || await window.DB.getDoc(docId);
+                if (!targetDoc) { setStep(expired ? "pwcheck" : "input"); return; }
+                window.DB.addLog({ docId:targetDoc.id, name:pass.email, time:new Date().toISOString(), linkId:targetDoc.id }).catch(()=>{});
+                window.DB.incViewCount(targetDoc.id).catch(()=>{});
+                window.location.href = targetDoc.url;
+              } catch { setStep(expired ? "pwcheck" : "input"); }
+            };
+            openNow();
+            return;
+          }
+        }
+
         if (!isEmailLink) { setStep(expired ? "pwcheck" : "input"); return; }
 
         const run = async () => {
@@ -482,6 +520,9 @@
             }
             if (!targetDoc) { setError("문서를 찾을 수 없습니다."); setStep("error"); return; }
 
+            // 당일 24:00까지 재인증 없이 열람 가능한 패스 저장
+            saveDayPass(targetDoc.id, user.email);
+
             // 문서를 즉시 열고, 로그는 백그라운드에서 기록 (대기 없음)
             window.DB.addLog({ docId:targetDoc.id, name:user.email, time:new Date().toISOString(), linkId:targetDoc.id }).catch(()=>{});
             window.DB.incViewCount(targetDoc.id).catch(()=>{});
@@ -505,17 +546,18 @@
         setStep("input"); // 비번 확인 후 이메일 인증으로
       };
 
-      // 이메일 인증 링크 발송
+      // 이메일 인증 링크 발송 (아이디만 입력 → @idhospital.com 자동 부착)
       const handleSend = async () => {
         setError("");
-        if (!email.trim()) { setError("이메일을 입력해주세요."); triggerShake(); return; }
-        if (!email.toLowerCase().endsWith("@idhospital.com")) {
-          setError("@idhospital.com 사내 메일만 사용 가능합니다."); triggerShake(); return;
-        }
+        const local = email.trim().toLowerCase().replace(/@.*$/, "");
+        if (!local) { setError("이메일 아이디를 입력해주세요."); triggerShake(); return; }
+        if (!/^[a-z0-9._%+-]+$/.test(local)) { setError("올바른 이메일 아이디를 입력해주세요."); triggerShake(); return; }
         if (!doc) { setError("존재하지 않는 문서입니다."); return; }
+        const fullEmail = `${local}@idhospital.com`;
         setSending(true);
         try {
-          await window.AUTH.sendLink(email.trim().toLowerCase(), docId);
+          await window.AUTH.sendLink(fullEmail, docId);
+          setEmail(local);
           setStep("sent");
         } catch(e) {
           setError(e.message || "메일 발송에 실패했습니다."); triggerShake();
@@ -568,7 +610,7 @@
                 {doc && <div style={{ color:"#e91e8c", fontSize:12, marginTop:8, fontWeight:700 }}>{doc.docName || doc.id}</div>}
                 <p style={{ color:"rgba(255,255,255,0.45)", fontSize:13, marginTop:6 }}>
                   {step==="pwcheck" ? "관리자에게 받은 비밀번호를 입력해주세요"
-                    : step==="sent" ? `${email} 으로 인증 링크를 발송했습니다`
+                    : step==="sent" ? `${email}@idhospital.com 으로 인증 링크를 발송했습니다`
                     : "사내 이메일로 인증 링크를 받아 문서를 열람하세요"}
                 </p>
               </div>
@@ -608,13 +650,17 @@
                   <div style={{ background:"rgba(255,255,255,0.05)", backdropFilter:"blur(20px)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:16, padding:28 }}>
                     <div style={{ marginBottom:20 }}>
                       <label style={{ color:"rgba(255,255,255,0.6)", fontSize:11, letterSpacing:1, display:"block", marginBottom:8, textTransform:"uppercase" }}>사내 이메일</label>
-                      <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
-                        placeholder="example@idhospital.com"
-                        onKeyDown={e=>e.key==="Enter"&&handleSend()}
-                        style={pageInput}
-                        onFocus={e=>e.target.style.borderColor="#e91e8c"}
-                        onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.15)"}/>
-                      <div style={{ color:"rgba(255,255,255,0.3)", fontSize:11, marginTop:6 }}>@idhospital.com 사내 메일만 인증 가능합니다</div>
+                      <div style={{ display:"flex", alignItems:"center", background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.15)", borderRadius:10, transition:"border-color .2s" }}
+                        onFocus={e=>e.currentTarget.style.borderColor="#e91e8c"}
+                        onBlur={e=>e.currentTarget.style.borderColor="rgba(255,255,255,0.15)"}>
+                        <input type="text" value={email}
+                          onChange={e=>setEmail(e.target.value.replace(/@.*$/,""))}
+                          placeholder="이메일 아이디"
+                          onKeyDown={e=>e.key==="Enter"&&handleSend()}
+                          style={{ flex:1, background:"transparent", border:"none", padding:"12px 0 12px 14px", color:"#fff", fontSize:15, outline:"none", fontFamily:"'Sora',sans-serif", minWidth:0 }}/>
+                        <span style={{ color:"#e91e8c", fontSize:14, fontWeight:600, padding:"0 14px 0 4px", whiteSpace:"nowrap", userSelect:"none" }}>@idhospital.com</span>
+                      </div>
+                      <div style={{ color:"rgba(255,255,255,0.3)", fontSize:11, marginTop:6 }}>아이디만 입력하세요 · @idhospital.com은 자동으로 붙습니다</div>
                     </div>
                     <button onClick={handleSend} disabled={sending}
                       style={{ width:"100%", background:sending?"#aab0be":"linear-gradient(135deg,#e91e8c,#c4166e)", color:"#fff", border:"none", borderRadius:10, padding:"14px 0", fontWeight:800, fontSize:15, cursor:sending?"not-allowed":"pointer", boxShadow:"0 4px 20px rgba(233,30,140,0.4)", fontFamily:"'Sora',sans-serif", letterSpacing:0.5 }}>
@@ -636,7 +682,7 @@
                 <div style={{ background:"rgba(255,255,255,0.05)", backdropFilter:"blur(20px)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:16, padding:28 }}>
                   <div style={{ textAlign:"center", marginBottom:20 }}>
                     <div style={{ color:"rgba(255,255,255,0.7)", fontSize:14, lineHeight:1.9 }}>
-                      <span style={{ color:"#e91e8c", fontWeight:700 }}>{email}</span><br/>
+                      <span style={{ color:"#e91e8c", fontWeight:700 }}>{email}@idhospital.com</span><br/>
                       으로 인증 링크를 보냈습니다.<br/>
                       메일함에서 인증 링크를 클릭하시면<br/>
                       보안 문서가 자동으로 열립니다.
