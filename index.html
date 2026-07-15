@@ -115,6 +115,11 @@
         const snap = await get(ref(db, "documents"));
         return snap.exists() ? Object.values(snap.val()) : [];
       },
+      // 단일 문서만 빠르게 조회
+      async getDoc(docId) {
+        const snap = await get(ref(db, `documents/${docId}`));
+        return snap.exists() ? snap.val() : null;
+      },
       async getCounter() {
         const snap = await get(ref(db, "counter"));
         return snap.exists() ? snap.val() : 1;
@@ -455,22 +460,32 @@
             while (!window.AUTH && tries++ < 50) await new Promise(r=>setTimeout(r,100));
             if (!window.AUTH) throw new Error("인증 시스템을 불러오지 못했습니다.");
 
-            const result = await window.AUTH.handleEmailLink();
+            // 인증과 동시에 문서를 병렬로 미리 조회 (속도 최적화)
+            const params   = new URLSearchParams(window.location.search);
+            const preId    = params.get("view") || localStorage.getItem("docIdForSignIn") || docId;
+            const docFetch = preId ? window.DB.getDoc(preId) : Promise.resolve(null);
+
+            const [result, preDoc] = await Promise.all([
+              window.AUTH.handleEmailLink(),
+              docFetch
+            ]);
             if (!result) { setStep("input"); return; }
 
             const { user, viewId: resolvedId } = result;
             const targetId = resolvedId || docId;
 
-            let targetDoc = docs.find(d => d.id === targetId);
+            // 이미 병렬로 받아온 문서 사용, 없으면 단일 조회
+            let targetDoc = (preDoc && preDoc.id === targetId) ? preDoc
+                          : docs.find(d => d.id === targetId);
             if (!targetDoc && targetId) {
-              const allDocs = await window.DB.getDocs();
-              targetDoc = allDocs.find(d => d.id === targetId);
+              targetDoc = await window.DB.getDoc(targetId);
             }
             if (!targetDoc) { setError("문서를 찾을 수 없습니다."); setStep("error"); return; }
 
-            await window.DB.addLog({ docId:targetDoc.id, name:user.email, time:new Date().toISOString(), linkId:targetDoc.id });
-            await window.DB.incViewCount(targetDoc.id);
-            onSuccess(targetDoc.url);
+            // 문서를 즉시 열고, 로그는 백그라운드에서 기록 (대기 없음)
+            window.DB.addLog({ docId:targetDoc.id, name:user.email, time:new Date().toISOString(), linkId:targetDoc.id }).catch(()=>{});
+            window.DB.incViewCount(targetDoc.id).catch(()=>{});
+            window.location.href = targetDoc.url;
           } catch(e) {
             console.error(e);
             setError(e.message || "인증에 실패했습니다. 다시 시도해주세요.");
@@ -919,16 +934,32 @@
         let cancelled = false;
         const init = async () => {
           try {
-            const d = await window.DB.getDocs();
-            const c = await window.DB.getCounter();
-            const p = await window.DB.getDefaultPw();
+            // 열람자 접속(view 링크)이면 필요한 문서 1개만 빠르게 조회
+            if (viewId) {
+              const [d, p] = await Promise.all([
+                window.DB.getDoc(viewId),
+                window.DB.getDefaultPw()
+              ]);
+              if (cancelled) return;
+              setDocs(d ? [d] : []);
+              setDefaultPw(p);
+              setLoadingDoc(false);
+              setReady(true);
+              setPage("access");
+              return;
+            }
+            // Admin 접속: 전체 데이터를 병렬로 조회
+            const [d, c, p] = await Promise.all([
+              window.DB.getDocs(),
+              window.DB.getCounter(),
+              window.DB.getDefaultPw()
+            ]);
             if (cancelled) return;
             setDocs(d);
             setCounter(c);
             setDefaultPw(p);
             setLoadingDoc(false);
             setReady(true);
-            if (viewId) setPage("access");
           } catch(e) {
             console.error("초기화 오류:", e);
             if (!cancelled) { setLoadingDoc(false); setReady(true); if (viewId) setPage("access"); }
