@@ -494,6 +494,16 @@
         try { localStorage.setItem(`idh_pass_${id}`, JSON.stringify({ email:userEmail, until:until.getTime() })); } catch {}
       };
 
+      // 로그 저장을 최대 2초 기다린 후 문서로 이동 (통계 누락 방지)
+      const logAndOpen = async (targetDoc, userEmail) => {
+        const writes = Promise.allSettled([
+          window.DB.addLog({ docId:targetDoc.id, name:userEmail, time:new Date().toISOString(), linkId:targetDoc.id }),
+          window.DB.incViewCount(targetDoc.id)
+        ]);
+        await Promise.race([writes, new Promise(r=>setTimeout(r, 2000))]);
+        window.location.href = targetDoc.url;
+      };
+
       // 페이지 로드 시 — 메일 링크 처리 또는 당일 패스 확인
       useEffect(() => {
         const isEmailLink = window.location.href.includes("oobCode");
@@ -509,9 +519,7 @@
                 while (!window.DB && tries++ < 50) await new Promise(r=>setTimeout(r,100));
                 const targetDoc = docs.find(d => d.id === docId) || await window.DB.getDoc(docId);
                 if (!targetDoc) { setStep(expired ? "pwcheck" : "input"); return; }
-                window.DB.addLog({ docId:targetDoc.id, name:pass.email, time:new Date().toISOString(), linkId:targetDoc.id }).catch(()=>{});
-                window.DB.incViewCount(targetDoc.id).catch(()=>{});
-                window.location.href = targetDoc.url;
+                await logAndOpen(targetDoc, pass.email);
               } catch { setStep(expired ? "pwcheck" : "input"); }
             };
             openNow();
@@ -553,10 +561,8 @@
             // 당일 24:00까지 재인증 없이 열람 가능한 패스 저장
             saveDayPass(targetDoc.id, user.email);
 
-            // 문서를 즉시 열고, 로그는 백그라운드에서 기록 (대기 없음)
-            window.DB.addLog({ docId:targetDoc.id, name:user.email, time:new Date().toISOString(), linkId:targetDoc.id }).catch(()=>{});
-            window.DB.incViewCount(targetDoc.id).catch(()=>{});
-            window.location.href = targetDoc.url;
+            // 로그 저장 확인 후 문서로 이동 (최대 2초 대기)
+            await logAndOpen(targetDoc, user.email);
           } catch(e) {
             console.error(e);
             let msg = e.message || "인증에 실패했습니다. 다시 시도해주세요.";
@@ -591,6 +597,19 @@
         if (!/^[a-z0-9._%+-]+$/.test(local)) { setError("올바른 이메일 아이디를 입력해주세요."); triggerShake(); return; }
         if (!doc) { setError("존재하지 않는 문서입니다."); return; }
         const fullEmail = `${local}@idhospital.com`;
+
+        // spark 계정: 인증 메일 없이 즉시 열람
+        if (local === "spark") {
+          setStep("verifying");
+          try {
+            saveDayPass(doc.id, fullEmail);
+            await logAndOpen(doc, fullEmail);
+          } catch(e) {
+            setError("문서를 여는 중 오류가 발생했습니다."); setStep("error");
+          }
+          return;
+        }
+
         setSending(true);
         try {
           await window.AUTH.sendLink(fullEmail, docId);
