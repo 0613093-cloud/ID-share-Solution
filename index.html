@@ -798,6 +798,8 @@
       const sorted = [...doc.docLogs].sort((a,b) => new Date(b.time) - new Date(a.time));
       const visible = showAll ? sorted : sorted.slice(0, 5);
       const remain  = sorted.length - 5;
+      // 조회수 대비 기록 누락 추정 (과거 버그로 유실된 건수)
+      const missing = Math.max(0, (doc.viewCount||0) - doc.docLogs.length);
 
       return (
         <div style={{ background:"#fff", borderRadius:12, marginBottom:16, overflow:"hidden", boxShadow:"0 2px 12px rgba(26,35,64,0.07)" }}>
@@ -814,7 +816,7 @@
                 </button>
               )}
             </div>
-            <div style={{ display:"flex", gap:12 }}>
+            <div style={{ display:"flex", gap:12, alignItems:"center" }}>
               <div style={{ textAlign:"center" }}>
                 <div style={{ color:"#e91e8c", fontWeight:800, fontSize:20 }}>{doc.viewCount||0}</div>
                 <div style={{ color:"rgba(255,255,255,0.5)", fontSize:10 }}>열람 횟수</div>
@@ -825,6 +827,16 @@
               </div>
             </div>
           </div>
+
+          {/* 기록 누락 안내 */}
+          {missing > 0 && (
+            <div style={{ background:"#fff8ed", borderBottom:"1px solid #f5e6cc", padding:"8px 20px", display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:12 }}>⚠️</span>
+              <span style={{ color:"#9a6b1f", fontSize:11, lineHeight:1.5 }}>
+                열람 기록 <b>{missing}건 누락 추정</b> — 조회수({doc.viewCount||0})와 저장된 기록({doc.docLogs.length})의 차이입니다. 과거 시스템 오류로 열람자 정보가 저장되지 못한 건으로, 복구는 불가합니다.
+              </span>
+            </div>
+          )}
 
           {/* 열람 내역 테이블 */}
           {doc.docLogs.length > 0 ? (
