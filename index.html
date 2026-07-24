@@ -494,13 +494,33 @@
         try { localStorage.setItem(`idh_pass_${id}`, JSON.stringify({ email:userEmail, until:until.getTime() })); } catch {}
       };
 
-      // 로그 저장을 최대 2초 기다린 후 문서로 이동 (통계 누락 방지)
+      // 로그 저장을 확실히 완료한 후 문서로 이동 (통계 누락 방지)
       const logAndOpen = async (targetDoc, userEmail) => {
-        const writes = Promise.allSettled([
-          window.DB.addLog({ docId:targetDoc.id, name:userEmail, time:new Date().toISOString(), linkId:targetDoc.id }),
-          window.DB.incViewCount(targetDoc.id)
-        ]);
-        await Promise.race([writes, new Promise(r=>setTimeout(r, 2000))]);
+        const entry = { docId:targetDoc.id, name:userEmail, time:new Date().toISOString(), linkId:targetDoc.id };
+
+        // 1차 시도 → 실패 시 1회 재시도 (네트워크 순간 오류 대비)
+        let logged = false;
+        for (let attempt = 0; attempt < 2 && !logged; attempt++) {
+          try {
+            await window.DB.addLog(entry);
+            logged = true;
+          } catch (err) {
+            console.warn(`로그 저장 실패 (시도 ${attempt+1})`, err);
+            if (attempt === 0) await new Promise(r=>setTimeout(r, 600));
+          }
+        }
+
+        // 최후 수단: 페이지 이동에 영향받지 않는 sendBeacon으로 재전송
+        if (!logged && navigator.sendBeacon) {
+          try {
+            const url = "https://idh--share-default-rtdb.asia-southeast1.firebasedatabase.app/logs.json";
+            navigator.sendBeacon(url, new Blob([JSON.stringify(entry)], { type:"text/plain" }));
+          } catch {}
+        }
+
+        // 조회수 증가 (실패해도 진행)
+        try { await window.DB.incViewCount(targetDoc.id); } catch {}
+
         window.location.href = targetDoc.url;
       };
 
@@ -520,7 +540,10 @@
                 const targetDoc = docs.find(d => d.id === docId) || await window.DB.getDoc(docId);
                 if (!targetDoc) { setStep(expired ? "pwcheck" : "input"); return; }
                 await logAndOpen(targetDoc, pass.email);
-              } catch { setStep(expired ? "pwcheck" : "input"); }
+              } catch(e) {
+                console.error("당일 패스 열람 오류:", e);
+                setStep(expired ? "pwcheck" : "input");
+              }
             };
             openNow();
             return;
