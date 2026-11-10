@@ -33,6 +33,40 @@ button:disabled,[aria-disabled="true"]{cursor:not-allowed}
 button[aria-busy="true"]{cursor:progress}
 button{-webkit-tap-highlight-color:transparent}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+
+/* ── UX 기준 v1.4 (2026-11-11) — UI별 애니메이션 ──
+   들어올 때 Ease out · 나갈 때 Ease in · 0.2~0.4초. 스낵바=아래에서 Slide · 토스트=제자리 Fade · 팝업=배경 Fade + 90%→100%
+   바텀시트=아래에서 Slide · 좋아요=Spring · 체크박스=선 그리기 · 로딩=Linear 회전 · 타이틀=한 줄씩 */
+:root { --ux-out: cubic-bezier(0.22, 0.61, 0.36, 1); --ux-in: cubic-bezier(0.4, 0, 1, 1); --ux-inout: cubic-bezier(0.65, 0, 0.35, 1); --ux-spring: cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes ux-fade-in  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ux-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes ux-rise     { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes ux-pop-in   { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: none; } }
+@keyframes ux-snack-in { from { opacity: 0; transform: translateY(100%); } to { opacity: 1; transform: none; } }
+@keyframes ux-snack-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(100%); } }
+@keyframes ux-sheet-up { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes ux-like-pop { 0% { transform: scale(1); } 40% { transform: scale(1.25); } 70% { transform: scale(0.95); } 100% { transform: scale(1); } }
+@keyframes ux-spin     { to { transform: rotate(360deg); } }
+.ux-fade-in  { animation: ux-fade-in 200ms var(--ux-out) both; }
+.ux-fade-out { animation: ux-fade-out 200ms var(--ux-in) both; }
+.ux-pop-in   { animation: ux-pop-in 300ms var(--ux-out) both; }
+.ux-scrim    { animation: ux-fade-in 300ms var(--ux-out) both; }
+.ux-snack-in { animation: ux-snack-in 300ms var(--ux-out) both; }
+.ux-snack-out { animation: ux-snack-out 200ms var(--ux-in) both; }
+.ux-sheet-up { animation: ux-sheet-up 300ms var(--ux-out) both; }
+.ux-like-pop { animation: ux-like-pop 400ms var(--ux-spring) both; }
+.ux-spin     { animation: ux-spin 0.8s linear infinite; }
+/* 타이틀 · 서브타이틀 한 줄씩 (60ms 간격) — 부모에 ux-stagger, 또는 줄마다 ux-title + ux-title-2/3 */
+.ux-stagger > *, .ux-title { animation: ux-rise 300ms var(--ux-out) both; }
+.ux-stagger > :nth-child(2), .ux-title-2 { animation-delay: 60ms; }
+.ux-stagger > :nth-child(3), .ux-title-3 { animation-delay: 120ms; }
+.ux-stagger > :nth-child(4) { animation-delay: 180ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ux-fade-in, .ux-fade-out, .ux-pop-in, .ux-scrim, .ux-snack-in, .ux-snack-out, .ux-sheet-up, .ux-like-pop,
+  .ux-stagger > *, .ux-title, input[type="checkbox"]:checked { animation: none !important; }
+  .ux-spin { animation-duration: 2s; }
+}
 </style>
   <script>
     // 전역 에러를 화면에 표시 (흰 화면 진단용)
@@ -335,7 +369,7 @@ button{-webkit-tap-highlight-color:transparent}
           </div>
 
           <div style={{ maxWidth:720, margin:"40px auto", padding:"0 16px" }}>
-            <div style={{ marginBottom:24 }}>
+            <div className="ux-stagger" style={{ marginBottom:24 }}>
               <h1 style={{ color:"#1a2340", fontSize:24, fontWeight:800, margin:0, letterSpacing:-0.5 }}>문서 보안 공유 시스템</h1>
               <p style={{ color:"#8892a4", fontSize:13, margin:"6px 0 0" }}>민감 문서를 비밀번호로 보호하여 안전하게 공유하세요</p>
             </div>
@@ -698,11 +732,11 @@ button{-webkit-tap-highlight-color:transparent}
                     : <svg width="32" height="32" viewBox="0 0 24 24" fill="none"><path d="M3 8l9 6 9-6M5 6h14a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2z" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
                   }
                 </div>
-                <h2 style={{ color:"#fff", fontSize:22, fontWeight:800, margin:0, letterSpacing:-0.5 }}>
+                <h2 className="ux-title" style={{ color:"#fff", fontSize:22, fontWeight:800, margin:0, letterSpacing:-0.5 }}>
                   {step==="pwcheck" ? "열람 기한 만료" : step==="sent" ? "메일을 확인해주세요" : "보안 문서 접근"}
                 </h2>
-                {doc && <div style={{ color:"#e91e8c", fontSize:12, marginTop:8, fontWeight:700 }}>{doc.docName || doc.id}</div>}
-                <p style={{ color:"rgba(255,255,255,0.45)", fontSize:13, marginTop:6 }}>
+                {doc && <div className="ux-title ux-title-2" style={{ color:"#e91e8c", fontSize:12, marginTop:8, fontWeight:700 }}>{doc.docName || doc.id}</div>}
+                <p className="ux-title ux-title-3" style={{ color:"rgba(255,255,255,0.45)", fontSize:13, marginTop:6 }}>
                   {step==="pwcheck" ? "관리자에게 받은 비밀번호를 입력해주세요"
                     : step==="sent" ? `${email}@idhospital.com 으로 인증 링크를 발송했습니다`
                     : "사내 이메일로 인증 링크를 받아 문서를 열람하세요"}
