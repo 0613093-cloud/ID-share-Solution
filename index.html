@@ -67,6 +67,9 @@ button{-webkit-tap-highlight-color:transparent}
   .ux-stagger > *, .ux-title, input[type="checkbox"]:checked { animation: none !important; }
   .ux-spin { animation-duration: 2s; }
 }
+
+/* UX 기준 v1.5 (2026-11-13) — 휴대폰 입력칸 글자 16px 이상 (아이폰이 입력할 때 화면을 확대하지 않게) */
+@media (max-width: 640px) { input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea { font-size: max(16px, 1em) !important; } }
 </style>
   <script>
     // 전역 에러를 화면에 표시 (흰 화면 진단용)
@@ -756,7 +759,7 @@ button{-webkit-tap-highlight-color:transparent}
                     </div>
                     <div style={{ marginBottom:20 }}>
                       <label style={{ color:"rgba(255,255,255,0.6)", fontSize:11, letterSpacing:1, display:"block", marginBottom:8, textTransform:"uppercase" }}>비밀번호</label>
-                      <input type="password" value={pwInput} onChange={e=>setPwInput(e.target.value)}
+                      <input type="password" autoFocus value={pwInput} onChange={e=>setPwInput(e.target.value)}
                         placeholder="관리자 비밀번호 입력"
                         onKeyDown={e=>e.key==="Enter"&&handlePwCheck()}
                         style={{...pageInput, letterSpacing:4}}
