@@ -25,6 +25,9 @@ button:focus-visible,a:focus-visible,[role="button"]:focus-visible,summary:focus
 button:disabled,[aria-disabled="true"]{cursor:not-allowed}
 button[aria-busy="true"]{cursor:progress}
 button{-webkit-tap-highlight-color:transparent}
+/* v1.6 버튼 상태 : 호버는 마우스가 있는 기기만 한 단계, 눌림은 두 단계 진하게 (크기 줄이기 없음) */
+@media (hover:hover){button:not(:disabled):hover{filter:brightness(.95)}}
+button:not(:disabled):active{filter:brightness(.88)}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
 
 /* ── UX 기준 v1.4 (2026-11-11) — UI별 애니메이션 ──
@@ -324,6 +327,7 @@ button{-webkit-tap-highlight-color:transparent}
       const [error, setError]         = useState("");
       const [pwError, setPwError]     = useState("");
       const [saving, setSaving]       = useState(false);
+      const [pwSaved, setPwSaved]     = useState(false);
 
       const handleCreate = async () => {
         setError("");
@@ -353,7 +357,7 @@ button{-webkit-tap-highlight-color:transparent}
         await window.DB.setDefaultPw(newDefaultPw);
         setDefaultPw(newDefaultPw);
         setNewDPw(""); setConfDef("");
-        alert("디폴트 비밀번호가 설정되었습니다.");
+        setPwSaved(true); setTimeout(()=>setPwSaved(false),2000); // v1.6 : 알림창 대신 버튼 글자 "✓ 변경됨" 2초
       };
 
       const tabStyle = t => ({
@@ -509,7 +513,7 @@ button{-webkit-tap-highlight-color:transparent}
                       placeholder="4자리 숫자 재입력" style={{...inputStyle,letterSpacing:8,fontSize:18,fontWeight:700}}/>
                   </Field>
                   <button onClick={handleSetDefault} style={{ width:"100%", background:"linear-gradient(135deg,#e91e8c,#c4166e)", color:"#fff", border:"none", borderRadius:10, padding:"13px 0", fontWeight:800, fontSize:14, cursor:"pointer", fontFamily:"'Sora',sans-serif" }}>
-                    디폴트 비밀번호 변경
+                    <span aria-live="polite">{pwSaved ? "✓ 변경됨" : "디폴트 비밀번호 변경"}</span>
                   </button>
                 </div>
               )}
@@ -747,7 +751,6 @@ button{-webkit-tap-highlight-color:transparent}
               {/* ── Step 1: 마감 후 비밀번호 확인 ── */}
               {step==="pwcheck" && (
                 <div>
-                  {error && <div style={{ background:"rgba(233,30,140,0.15)", border:"1px solid rgba(233,30,140,0.4)", borderRadius:10, padding:"12px 16px", color:"#f472b6", fontSize:13, marginBottom:16, textAlign:"center" }}>{error}</div>}
                   <div style={{ background:"rgba(255,255,255,0.05)", backdropFilter:"blur(20px)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:16, padding:28 }}>
                     <div style={{ background:"rgba(255,255,255,0.05)", borderRadius:8, padding:"10px 14px", marginBottom:20, textAlign:"center" }}>
                       <div style={{ color:"rgba(255,255,255,0.4)", fontSize:11 }}>열람 마감일</div>
@@ -761,6 +764,8 @@ button{-webkit-tap-highlight-color:transparent}
                         style={{...pageInput, letterSpacing:4}}
                         onFocus={e=>e.target.style.borderColor="#e91e8c"}
                         onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.15)"}/>
+                      {/* v1.6 : 오류는 칸 아래 한 줄 */}
+                      {error && <div role="alert" style={{ color:"#f472b6", fontSize:12, marginTop:6 }}>{error}</div>}
                     </div>
                     <button onClick={handlePwCheck}
                       style={{ width:"100%", background:"linear-gradient(135deg,#e91e8c,#c4166e)", color:"#fff", border:"none", borderRadius:10, padding:"14px 0", fontWeight:800, fontSize:15, cursor:"pointer", boxShadow:"0 4px 20px rgba(233,30,140,0.4)", fontFamily:"'Sora',sans-serif" }}>
@@ -773,14 +778,13 @@ button{-webkit-tap-highlight-color:transparent}
               {/* ── Step 2: 이메일 입력 ── */}
               {(step==="input" || step==="error") && (
                 <div>
-                  {error && <div style={{ background:"rgba(233,30,140,0.15)", border:"1px solid rgba(233,30,140,0.4)", borderRadius:10, padding:"12px 16px", color:"#f472b6", fontSize:13, marginBottom:16, textAlign:"center" }}>{error}</div>}
                   <div style={{ background:"rgba(255,255,255,0.05)", backdropFilter:"blur(20px)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:16, padding:28 }}>
                     <div style={{ marginBottom:20 }}>
                       <label style={{ color:"rgba(255,255,255,0.6)", fontSize:11, letterSpacing:1, display:"block", marginBottom:8, textTransform:"uppercase" }}>사내 이메일</label>
                       <div style={{ display:"flex", alignItems:"center", background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.15)", borderRadius:10, transition:"border-color .2s" }}
                         onFocus={e=>e.currentTarget.style.borderColor="#e91e8c"}
                         onBlur={e=>e.currentTarget.style.borderColor="rgba(255,255,255,0.15)"}>
-                        <input type="text" value={email}
+                        <input type="text" autoFocus value={email}
                           onChange={e=>setEmail(e.target.value.replace(/@.*$/,""))}
                           placeholder="이메일 아이디"
                           onKeyDown={e=>e.key==="Enter"&&handleSend()}
@@ -788,6 +792,7 @@ button{-webkit-tap-highlight-color:transparent}
                         <span style={{ color:"#e91e8c", fontSize:14, fontWeight:600, padding:"0 14px 0 4px", whiteSpace:"nowrap", userSelect:"none" }}>@idhospital.com</span>
                       </div>
                       <div style={{ color:"rgba(255,255,255,0.3)", fontSize:11, marginTop:6 }}>아이디만 입력하세요 · @idhospital.com은 자동으로 붙습니다</div>
+                      {error && <div role="alert" style={{ color:"#f472b6", fontSize:12, marginTop:6 }}>{error}</div>}
                     </div>
                     <button onClick={handleSend} disabled={sending} aria-busy={sending}
                       style={{ width:"100%", background:sending?"#aab0be":"linear-gradient(135deg,#e91e8c,#c4166e)", color:"#fff", border:"none", borderRadius:10, padding:"14px 0", fontWeight:800, fontSize:15, cursor:sending?"not-allowed":"pointer", boxShadow:"0 4px 20px rgba(233,30,140,0.4)", fontFamily:"'Sora',sans-serif", letterSpacing:0.5 }}>
@@ -1092,7 +1097,7 @@ button{-webkit-tap-highlight-color:transparent}
         <div style={{ position:"fixed", bottom:16, left:"50%", transform:"translateX(-50%)", background:"rgba(26,35,64,0.95)", backdropFilter:"blur(12px)", borderRadius:50, padding:"8px 20px", display:"flex", gap:4, zIndex:999, boxShadow:"0 4px 24px rgba(0,0,0,0.3)", border:"1px solid rgba(255,255,255,0.1)" }}>
           {[{id:"admin",label:"Admin"},{id:"stats",label:"통계"}].map(it=>(
             <button key={it.id} onClick={()=>setPage(it.id)} aria-pressed={page===it.id}
-              style={{ background:page===it.id?"#e91e8c":"transparent", color:page===it.id?"#fff":"rgba(255,255,255,0.6)", border:"none", borderRadius:24, padding:"7px 18px", cursor:"pointer", fontWeight:700, fontSize:12, fontFamily:"'Sora',sans-serif", transition:"background-color 200ms var(--ux-inout), color 200ms var(--ux-inout)", whiteSpace:"nowrap" }}>
+              style={{ background:page===it.id?"#e91e8c":"transparent", color:page===it.id?"#fff":"rgba(255,255,255,0.6)", border:"none", borderRadius:24, padding:"7px 18px", cursor:"pointer", fontWeight:page===it.id?800:500, fontSize:12, fontFamily:"'Sora',sans-serif", transition:"background-color 200ms var(--ux-inout), color 200ms var(--ux-inout)", whiteSpace:"nowrap" }}>
               {it.label}
             </button>
           ))}
